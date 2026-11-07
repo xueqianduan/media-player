@@ -1,0 +1,44 @@
+name: myplayer
+description: "ReelBox - 轻量级跨平台本地视频播放器"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.13.0-252.0.dev
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # 状态管理 / 路由
+  flutter_riverpod: ^3.4.3
+  go_router: ^18.1.2
+
+  # 播放引擎
+  media_kit: ^1.2.6
+  media_kit_video: ^2.0.1
+  media_kit_libs_video: ^1.0.7
+
+  # 媒体库访问 / 文件导入 / 目录
+  photo_manager: ^3.12.0
+  file_picker: ^12.3.0
+  path_provider: ^2.1.6
+
+  # 工具
+  uuid: ^4.6.0
+  wakelock_plus: ^1.8.0
+  screen_brightness: ^2.1.11
+  volume_controller: ^3.7.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

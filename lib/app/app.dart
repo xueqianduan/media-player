@@ -1,0 +1,38 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../core/theme/app_theme.dart';
+import '../features/settings/application/settings_controller.dart';
+import 'router.dart';
+
+/// ReelBox 应用根组件。
+class ReelBoxApp extends ConsumerWidget {
+  const ReelBoxApp({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return MaterialApp.router(
+      title: 'ReelBox',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
+      themeMode: ref.watch(themeModeProvider),
+      routerConfig: appRouter,
+      locale: const Locale('zh', 'CN'),
+      supportedLocales: const <Locale>[Locale('zh', 'CN'), Locale('en')],
+      builder: (BuildContext context, Widget? child) {
+        // 限制系统字体缩放范围，避免超大字号破坏卡片布局。
+        final MediaQueryData media = MediaQuery.of(context);
+        return MediaQuery(
+          data: media.copyWith(
+            textScaler: media.textScaler.clamp(
+              minScaleFactor: 0.9,
+              maxScaleFactor: 1.3,
+            ),
+          ),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
+    );
+  }
+}

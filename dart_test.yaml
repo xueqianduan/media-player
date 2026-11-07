@@ -1,0 +1,3 @@
+tags:
+  preview:
+    description: 生成设计预览图，不参与 CI
