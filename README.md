@@ -165,14 +165,14 @@ dart format lib test integration_test
 | Freezed / json_serializable | 手写不可变模型 + `copyWith` / `toJson` / `fromJson` | 减少生成依赖，保证离线可构建 |
 | 字幕、音轨切换（P1） | 暂未提供 UI 入口 | V1.0 验收标准未包含；`media_kit` 已具备轨道能力，可作为 V1.5 增强 |
 | 分享视频 | 复制视频路径到剪贴板 | 未引入 `share_plus`，避免额外平台配置 |
-| 亮度调节 | 应用内遮罩调暗 + 音量走播放器音量 | 不申请系统亮度权限，跨平台行为一致 |
+| 亮度 / 音量调节 | 窗口亮度用 `screen_brightness`，音量用 `volume_controller` 调系统媒体音量 | 手势真实生效；亮度只在播放器窗口内修改，退出后恢复系统亮度 |
 | 缩略图生成 | 相册资源由 `photo_manager` 生成并缓存；导入文件可用 `MediaProbe` 截图 | 保证列表懒加载，避免批量解码 |
 
 已知限制：
 
 - iOS 构建需在 macOS 上验证（本机为 Windows，无法编译 iOS）。
 - 媒体格式、硬件解码、横竖屏与后台行为需在 Android / iOS 真机复核。
-- 缩略图缓存位于系统临时目录下的 `reelbox_thumbs`，清理缓存按钮为提示性操作（不删除原始文件）。
+- 缩略图缓存位于应用缓存目录，清理缓存只删除缩略图，不影响原始视频。
 - 播放器手势、亮度与音量需真机验证。
 
 ---
