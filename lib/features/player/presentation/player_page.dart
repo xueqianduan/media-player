@@ -44,6 +44,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   String? _gestureHint;
   Timer? _hintTimer;
   bool _initialised = false;
+  _PlayerPanel? _panel;
+  double _boostBase = 1;
+  double _boostStart = 2;
+  double _lastBoost = 2;
 
   @override
   void initState() {
@@ -228,7 +232,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
 
   void _scheduleHide() {
     _hideTimer?.cancel();
-    if (_session.currentItem == null) return;
+    if (_session.currentItem == null || _panel != null) return;
     _hideTimer = Timer(const Duration(seconds: 4), () {
       if (mounted && _session.playing.value) {
         setState(() => _controlsVisible = false);
@@ -237,6 +241,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   }
 
   void _toggleControls() {
+    if (_panel != null) {
+      _closePanel();
+      return;
+    }
     setState(() => _controlsVisible = !_controlsVisible);
     if (_controlsVisible) _scheduleHide();
   }
@@ -307,21 +315,42 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     }
   }
 
-  double _speedBeforeBoost = 1;
+  String _formatSpeed(double value) {
+    if (value == value.roundToDouble()) return value.toStringAsFixed(1);
+    return value
+        .toStringAsFixed(2)
+        .replaceFirst(RegExp(r'0$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+  }
 
   Future<void> _startBoost() async {
     if (_boosted) return;
-    _speedBeforeBoost = _session.speed.value;
+    _boostBase = _session.speed.value;
+    _boostStart = ref.read(settingsControllerProvider).longPressSpeed;
+    _lastBoost = _boostStart;
     _boosted = true;
-    final double boost = ref.read(settingsControllerProvider).longPressSpeed;
-    await _session.setSpeed(boost);
-    if (mounted) _showHint('${boost}x 倍速播放中');
+    await _session.setSpeed(_boostStart);
+    if (mounted) {
+      _showHint('${_formatSpeed(_boostStart)}x · 左右滑动调速');
+    }
+  }
+
+  /// 长按后左右滑动：以 0.25x 为步进，在 0.5x ~ 5x 之间调整。
+  Future<void> _onBoostMove(LongPressMoveUpdateDetails details) async {
+    if (!_boosted) return;
+    final double dx = details.localOffsetFromOrigin.dx;
+    double speed = (_boostStart + dx / 70 * 0.25).clamp(0.5, 5.0);
+    speed = (speed * 4).roundToDouble() / 4;
+    if ((speed - _lastBoost).abs() < 0.001) return;
+    _lastBoost = speed;
+    await _session.setSpeed(speed);
+    if (mounted) _showHint('${_formatSpeed(speed)}x');
   }
 
   Future<void> _endBoost() async {
     if (!_boosted) return;
     _boosted = false;
-    await _session.setSpeed(_speedBeforeBoost);
+    await _session.setSpeed(_boostBase);
     if (mounted) setState(() => _gestureHint = null);
   }
 
@@ -346,111 +375,229 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     _showHint('分享功能后续开放');
   }
 
-  /// 顶部「更多」：播放方式与画面尺寸。
-  Future<void> _showMoreSheet() async {
-    final AppSettings settings = ref.read(settingsControllerProvider);
-    final RepeatMode currentMode = _session.repeatMode.value;
+  void _openPanel(_PlayerPanel panel) {
+    _hideTimer?.cancel();
+    setState(() {
+      _panel = panel;
+      _controlsVisible = true;
+    });
+  }
 
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF16181F),
-      builder: (BuildContext sheetContext) {
-        return SafeArea(
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 8, 4),
-                  child: Row(
-                    children: <Widget>[
-                      const Text(
-                        '播放设置',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        onPressed: () => Navigator.of(sheetContext).pop(),
-                        icon: const Icon(
-                          Icons.close_rounded,
-                          color: Colors.white54,
-                          size: 20,
-                        ),
-                      ),
-                    ],
-                  ),
+  void _closePanel() {
+    if (_panel == null) return;
+    setState(() => _panel = null);
+    _scheduleHide();
+  }
+
+  Widget _buildPanelHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 10, 6, 4),
+      child: Row(
+        children: <Widget>[
+          Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const Spacer(),
+          IconButton(
+            onPressed: _closePanel,
+            icon: const Icon(
+              Icons.close_rounded,
+              color: Colors.white54,
+              size: 20,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 播放器内嵌面板：不依赖系统弹窗，避免部分机型上弹层不显示。
+  Widget _buildPanelOverlay() {
+    final double maxHeight = MediaQuery.sizeOf(context).height * 0.78;
+    return Stack(
+      children: <Widget>[
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _closePanel,
+            child: ColoredBox(color: Colors.black.withValues(alpha: 0.55)),
+          ),
+        ),
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: Container(
+              width: double.infinity,
+              decoration: const BoxDecoration(
+                color: Color(0xFF16181F),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: SafeArea(
+                top: false,
+                child: SingleChildScrollView(
+                  child: _panel == _PlayerPanel.speed
+                      ? _buildSpeedPanel()
+                      : _buildMorePanel(),
                 ),
-                const _SheetSectionTitle('播放方式'),
-                for (final RepeatMode mode in RepeatMode.playbackModes)
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSpeedPanel() {
+    final double current = _session.speed.value;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          _buildPanelHeader('播放速度'),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: AppSettings.speedOptions.map((double value) {
+                final bool selected = (current - value).abs() < 0.01;
+                return SizedBox(
+                  width: 68,
+                  height: 42,
+                  child: OutlinedButton(
+                    onPressed: () {
+                      _session.setSpeed(value);
+                      _closePanel();
+                      _showHint('${_formatSpeed(value)}x 倍速');
+                    },
+                    style: OutlinedButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      backgroundColor: selected
+                          ? AppColors.primary
+                          : const Color(0xFF23262F),
+                      foregroundColor: selected ? Colors.white : Colors.white70,
+                      side: BorderSide(
+                        color: selected
+                            ? AppColors.primary
+                            : const Color(0xFF333743),
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: Text(
+                      '${value}x',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMorePanel() {
+    final VideoScaleMode scaleMode = ref.watch(
+      settingsControllerProvider.select(
+        (AppSettings settings) => settings.videoScaleMode,
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        _buildPanelHeader('播放设置'),
+        const _SheetSectionTitle('播放方式'),
+        ValueListenableBuilder<RepeatMode>(
+          valueListenable: _session.repeatMode,
+          builder: (BuildContext context, RepeatMode mode, _) {
+            return Column(
+              children: <Widget>[
+                for (final RepeatMode option in RepeatMode.playbackModes)
                   _SheetOption(
-                    icon: switch (mode) {
+                    icon: switch (option) {
                       RepeatMode.loopAll => Icons.repeat_rounded,
                       RepeatMode.loopOne => Icons.repeat_one_rounded,
                       _ => Icons.trending_flat_rounded,
                     },
-                    title: mode.label,
-                    subtitle: switch (mode) {
+                    title: option.label,
+                    subtitle: switch (option) {
                       RepeatMode.loopAll => '播完自动下一个，最后一个回到第一个',
                       RepeatMode.loopOne => '当前视频播完从头重播',
                       _ => '播完当前视频后自动停止',
                     },
-                    selected: mode == currentMode,
+                    selected: option == mode,
                     onTap: () {
-                      _session.setRepeatMode(mode);
-                      Navigator.of(sheetContext).pop();
-                      _showHint(mode.label);
+                      _session.setRepeatMode(option);
+                      _showHint(option.label);
                     },
                   ),
-                const Divider(color: Color(0xFF2A2E3A), height: 20),
-                const _SheetSectionTitle('画面尺寸'),
-                for (final VideoScaleMode mode in VideoScaleMode.values)
-                  _SheetOption(
-                    icon: switch (mode) {
-                      VideoScaleMode.original => Icons.crop_free_rounded,
-                      VideoScaleMode.fit => Icons.fit_screen_rounded,
-                      VideoScaleMode.cover => Icons.crop_rounded,
-                      VideoScaleMode.stretch => Icons.open_in_full_rounded,
-                    },
-                    title: mode.label,
-                    subtitle: switch (mode) {
-                      VideoScaleMode.original => '按视频原始尺寸显示，不放大',
-                      VideoScaleMode.fit => '保持比例完整显示，可能有黑边',
-                      VideoScaleMode.cover => '保持比例铺满屏幕，可能裁剪边缘',
-                      VideoScaleMode.stretch => '拉伸填满屏幕，画面比例会变形',
-                    },
-                    selected: mode == settings.videoScaleMode,
-                    onTap: () {
-                      ref
-                          .read(settingsControllerProvider.notifier)
-                          .setVideoScaleMode(mode);
-                      Navigator.of(sheetContext).pop();
-                      _showHint(mode.label);
-                    },
-                  ),
-                const Divider(color: Color(0xFF2A2E3A), height: 20),
-                _SheetOption(
-                  icon: Icons.tune_rounded,
-                  title: '视频操作',
-                  subtitle: '收藏、分类、重命名、详情等',
-                  selected: false,
-                  onTap: () {
-                    Navigator.of(sheetContext).pop();
-                    final MediaItem? item = _session.currentItem;
-                    if (item != null) showVideoActionSheet(context, ref, item);
-                  },
-                ),
-                const SizedBox(height: 12),
               ],
+            );
+          },
+        ),
+        const Divider(color: Color(0xFF2A2E3A), height: 20),
+        const _SheetSectionTitle('画面尺寸'),
+        for (final VideoScaleMode option in VideoScaleMode.values)
+          _SheetOption(
+            icon: switch (option) {
+              VideoScaleMode.original => Icons.crop_free_rounded,
+              VideoScaleMode.fit => Icons.fit_screen_rounded,
+              VideoScaleMode.cover => Icons.crop_rounded,
+              VideoScaleMode.stretch => Icons.open_in_full_rounded,
+            },
+            title: option.label,
+            subtitle: switch (option) {
+              VideoScaleMode.original => '按视频原始尺寸显示，不放大',
+              VideoScaleMode.fit => '保持比例完整显示，可能有黑边',
+              VideoScaleMode.cover => '保持比例铺满屏幕，可能裁剪边缘',
+              VideoScaleMode.stretch => '拉伸填满屏幕，画面比例会变形',
+            },
+            selected: option == scaleMode,
+            onTap: () {
+              ref
+                  .read(settingsControllerProvider.notifier)
+                  .setVideoScaleMode(option);
+              _showHint(option.label);
+            },
+          ),
+        const Divider(color: Color(0xFF2A2E3A), height: 20),
+        _SheetOption(
+          icon: Icons.tune_rounded,
+          title: '视频操作',
+          subtitle: '收藏、分类、重命名、详情等',
+          selected: false,
+          onTap: () {
+            _closePanel();
+            final MediaItem? item = _session.currentItem;
+            if (item != null) showVideoActionSheet(context, ref, item);
+          },
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
+          child: Text(
+            'ReelBox 1.0.0 · build 2026-11-07',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.28),
+              fontSize: 10,
             ),
           ),
-        );
-      },
+        ),
+      ],
     );
   }
 
@@ -467,93 +614,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     }
   }
 
-  Future<void> _showSpeedSheet() async {
-    final double current = _session.speed.value;
-    final double? picked = await showModalBottomSheet<double>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF16181F),
-      builder: (BuildContext sheetContext) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    const Text(
-                      '播放速度',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      onPressed: () => Navigator.of(sheetContext).pop(),
-                      icon: const Icon(
-                        Icons.close_rounded,
-                        color: Colors.white54,
-                        size: 20,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: AppSettings.speedOptions.map((double value) {
-                    final bool selected = (current - value).abs() < 0.01;
-                    return SizedBox(
-                      width: 68,
-                      height: 40,
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.of(sheetContext).pop(value),
-                        style: OutlinedButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                          backgroundColor: selected
-                              ? AppColors.primary
-                              : const Color(0xFF23262F),
-                          foregroundColor: selected
-                              ? Colors.white
-                              : Colors.white70,
-                          side: BorderSide(
-                            color: selected
-                                ? AppColors.primary
-                                : const Color(0xFF333743),
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                        child: Text(
-                          '${value}x',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: selected
-                                ? FontWeight.w600
-                                : FontWeight.w400,
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 8),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-    if (picked == null) return;
-    await _session.setSpeed(picked);
-    if (mounted) _showHint('${picked}x 倍速');
-  }
+  void _showSpeedSheet() => _openPanel(_PlayerPanel.speed);
+
+  void _showMoreSheet() => _openPanel(_PlayerPanel.more);
 
   Future<void> _showQueueSheet() async {
     final List<String> order = _session.queue.order;
@@ -666,90 +729,76 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       );
     }
 
+    final VideoScaleMode scaleMode = ref.watch(
+      settingsControllerProvider.select(
+        (AppSettings settings) => settings.videoScaleMode,
+      ),
+    );
+
     return Scaffold(
       backgroundColor: Colors.black,
-      body: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: _toggleControls,
-        onDoubleTapDown: _onDoubleTap,
-        onDoubleTap: () {},
-        onLongPressStart: (_) => _startBoost(),
-        onLongPressEnd: (_) => _endBoost(),
-        onVerticalDragStart:
-            ref.read(settingsControllerProvider).gesturesEnabled
-            ? _onVerticalStart
-            : null,
-        onVerticalDragUpdate:
-            ref.read(settingsControllerProvider).gesturesEnabled
-            ? _onVerticalUpdate
-            : null,
-        child: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            ValueListenableBuilder<String?>(
-              valueListenable: _session.error,
-              builder: (BuildContext context, String? error, _) {
-                if (error != null) {
-                  return _ErrorView(
-                    message: error,
-                    onRetry: () =>
-                        _session.start(startAt: _session.position.value),
-                  );
-                }
-                final VideoScaleMode scaleMode = ref.watch(
-                  settingsControllerProvider.select(
-                    (AppSettings settings) => settings.videoScaleMode,
+      body: Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          ValueListenableBuilder<String?>(
+            valueListenable: _session.error,
+            builder: (BuildContext context, String? error, _) {
+              if (error != null) {
+                return _ErrorView(
+                  message: error,
+                  onRetry: () =>
+                      _session.start(startAt: _session.position.value),
+                );
+              }
+              return VideoSurface(
+                engine: _session.engine,
+                fit: _fitFor(scaleMode),
+              );
+            },
+          ),
+          // 手势层放在控制层下方：按钮不再被父级 GestureDetector 抢走点击。
+          Positioned.fill(child: _buildGestureLayer()),
+          ValueListenableBuilder<bool>(
+            valueListenable: _session.buffering,
+            builder: (BuildContext context, bool buffering, _) {
+              if (!buffering) return const SizedBox.shrink();
+              return const Center(
+                child: SizedBox(
+                  width: 34,
+                  height: 34,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.4,
+                    color: Colors.white70,
                   ),
-                );
-                return VideoSurface(
-                  engine: _session.engine,
-                  fit: _fitFor(scaleMode),
-                );
-              },
-            ),
-            ValueListenableBuilder<bool>(
-              valueListenable: _session.buffering,
-              builder: (BuildContext context, bool buffering, _) {
-                if (!buffering) return const SizedBox.shrink();
-                return const Center(
-                  child: SizedBox(
-                    width: 34,
-                    height: 34,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.4,
-                      color: Colors.white70,
-                    ),
+                ),
+              );
+            },
+          ),
+          if (_gestureHint != null)
+            Center(
+              child: IgnorePointer(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 9,
                   ),
-                );
-              },
-            ),
-            if (_gestureHint != null)
-              Center(
-                child: IgnorePointer(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 9,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.playerScrim,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      _gestureHint!,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12.5,
-                      ),
-                    ),
+                  decoration: BoxDecoration(
+                    color: AppColors.playerScrim,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    _gestureHint!,
+                    style: const TextStyle(color: Colors.white, fontSize: 12.5),
                   ),
                 ),
               ),
-            AnimatedOpacity(
-              opacity: _controlsVisible ? 1 : 0,
-              duration: const Duration(milliseconds: 200),
-              child: IgnorePointer(
-                ignoring: !_controlsVisible,
+            ),
+          Positioned.fill(
+            child: IgnorePointer(
+              ignoring: !_controlsVisible,
+              child: AnimatedOpacity(
+                opacity: _controlsVisible ? 1 : 0,
+                duration: const Duration(milliseconds: 200),
                 child: ValueListenableBuilder<String?>(
                   valueListenable: _session.currentMediaId,
                   builder: (BuildContext context, String? _, _) =>
@@ -757,67 +806,74 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+          if (_panel != null) Positioned.fill(child: _buildPanelOverlay()),
+        ],
       ),
+    );
+  }
+
+  Widget _buildGestureLayer() {
+    final bool gesturesEnabled = ref.watch(
+      settingsControllerProvider.select(
+        (AppSettings settings) => settings.gesturesEnabled,
+      ),
+    );
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _toggleControls,
+      onDoubleTapDown: _onDoubleTap,
+      onDoubleTap: () {},
+      onLongPressStart: (_) => _startBoost(),
+      onLongPressMoveUpdate: _onBoostMove,
+      onLongPressEnd: (_) => _endBoost(),
+      onVerticalDragStart: gesturesEnabled ? _onVerticalStart : null,
+      onVerticalDragUpdate: gesturesEnabled ? _onVerticalUpdate : null,
+      child: const SizedBox.expand(),
     );
   }
 
   Widget _buildControls(BuildContext context) {
     final bool portrait =
         MediaQuery.orientationOf(context) == Orientation.portrait;
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: <Color>[
-            Color(0xCC000000),
-            Color(0x00000000),
-            Color(0x00000000),
-            Color(0xE6000000),
-          ],
-          stops: <double>[0, 0.22, 0.55, 1],
-        ),
-      ),
-      child: SafeArea(
-        child: Column(
-          children: <Widget>[
-            _buildTopBar(context),
-            const Spacer(),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-              child: _buildProgressRow(context),
-            ),
-            _buildControlRow(context),
-            if (portrait && _session.queue.length > 1)
-              _buildQueuePreview(context),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Padding(
-                padding: const EdgeInsets.only(right: 10),
-                child: IconButton(
-                  tooltip: _landscape ? '切换竖屏' : '切换横屏',
-                  onPressed: _toggleOrientation,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 36,
-                    height: 36,
-                  ),
-                  icon: Icon(
-                    _landscape
-                        ? Icons.screen_lock_rotation_rounded
-                        : Icons.screen_rotation_rounded,
-                    color: Colors.white70,
-                    size: 20,
-                  ),
+    return Stack(
+      children: <Widget>[
+        Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: <Color>[
+                    Color(0xCC000000),
+                    Color(0x00000000),
+                    Color(0x00000000),
+                    Color(0xE6000000),
+                  ],
+                  stops: <double>[0, 0.22, 0.55, 1],
                 ),
               ),
             ),
-            const SizedBox(height: 4),
-          ],
+          ),
         ),
-      ),
+        SafeArea(
+          child: Column(
+            children: <Widget>[
+              _buildTopBar(context),
+              const Spacer(),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                child: _buildProgressRow(context),
+              ),
+              _buildControlRow(context),
+              if (portrait && _session.queue.length > 1)
+                _buildQueuePreview(context),
+              const SizedBox(height: 6),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -1024,6 +1080,20 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               );
             },
           ),
+          const SizedBox(width: 4),
+          IconButton(
+            tooltip: _landscape ? '切换竖屏' : '切换横屏',
+            onPressed: _toggleOrientation,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 38, height: 38),
+            icon: Icon(
+              _landscape
+                  ? Icons.screen_lock_rotation_rounded
+                  : Icons.screen_rotation_rounded,
+              color: Colors.white,
+              size: 21,
+            ),
+          ),
         ],
       ),
     );
@@ -1132,21 +1202,26 @@ class _PlayerSideButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(icon, color: Colors.white, size: 20),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              style: const TextStyle(color: Colors.white70, fontSize: 9.5),
-            ),
-          ],
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          constraints: const BoxConstraints(minWidth: 48, minHeight: 46),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Icon(icon, color: Colors.white, size: 21),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                style: const TextStyle(color: Colors.white70, fontSize: 10),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1343,3 +1418,6 @@ class _SheetOption extends StatelessWidget {
     );
   }
 }
+
+/// 播放器内嵌面板类型。
+enum _PlayerPanel { speed, more }
