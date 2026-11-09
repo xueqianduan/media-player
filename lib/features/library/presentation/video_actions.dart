@@ -10,6 +10,31 @@ import '../application/library_controller.dart';
 import '../domain/models.dart';
 import 'widgets/media_collection_view.dart';
 
+/// 打开底部面板的统一入口。
+///
+/// 真机上出现过「点了没反应」的反馈，这里兜一层：万一路由/构建抛异常，
+/// 至少给用户一个可见提示（同时写日志），而不是完全静默。
+Future<T?> _openSheet<T>(
+  BuildContext context,
+  WidgetBuilder builder, {
+  bool transparent = false,
+}) async {
+  try {
+    return await showModalBottomSheet<T>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: transparent ? Colors.transparent : null,
+      builder: builder,
+    );
+  } on Object catch (error, stack) {
+    debugPrint('[ReelBox] open sheet failed: $error\n$stack');
+    if (context.mounted) {
+      showToast(context, '面板打开失败，请重试');
+    }
+    return null;
+  }
+}
+
 /// 打开播放器（支持队列与起始位置）。
 void openPlayer(
   BuildContext context, {
@@ -100,10 +125,7 @@ Future<void> showVideoActionSheet(
   final PlaybackProgress? record = ref
       .read(libraryControllerProvider)
       .progressOf(item.id);
-  await showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    builder: (BuildContext sheetContext) {
+  await _openSheet<void>(context, (BuildContext sheetContext) {
       return SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -237,10 +259,7 @@ Future<void> showBatchActionSheet(
       .where((MediaItem item) => mediaIds.contains(item.id))
       .toList();
 
-  await showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    builder: (BuildContext sheetContext) {
+  await _openSheet<void>(context, (BuildContext sheetContext) {
       return SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -355,10 +374,7 @@ Future<void> showCategoryPicker(
       if (mediaIds.every(category.mediaIds.contains)) category.id,
   };
 
-  await showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    builder: (BuildContext sheetContext) {
+  await _openSheet<void>(context, (BuildContext sheetContext) {
       return StatefulBuilder(
         builder: (BuildContext context, StateSetter setState) {
           final List<Category> current = ref
@@ -488,10 +504,7 @@ Future<void> showPlaylistPicker(
   );
   final Set<String> selected = <String>{};
 
-  await showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    builder: (BuildContext sheetContext) {
+  await _openSheet<void>(context, (BuildContext sheetContext) {
       return StatefulBuilder(
         builder: (BuildContext context, StateSetter setState) {
           final List<Playlist> current = ref
@@ -632,11 +645,9 @@ Future<void> showFavoriteSheet(
     520.0,
   );
 
-  await showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (BuildContext sheetContext) {
+  await _openSheet<void>(
+    context,
+    (BuildContext sheetContext) {
       return StatefulBuilder(
         builder: (BuildContext context, StateSetter setState) {
           final List<FavoriteFolder> folders = ref
@@ -845,6 +856,7 @@ Future<void> showFavoriteSheet(
         },
       );
     },
+    transparent: true,
   );
 
   final Set<String> add = selected.difference(initial);

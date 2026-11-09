@@ -75,42 +75,57 @@ class SelectionActionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: context.cardColor,
-      padding: const EdgeInsets.only(top: 6, bottom: 6),
+    // 这个操作条放在页面 body 的最底部（不放进 Scaffold.bottomNavigationBar），
+    // 这样 MediaQuery.padding.bottom 仍然有效；再用 minimum 兜底，保证即使
+    // ROM 把底部安全区报成 0，按钮也离开屏幕最底边、不落进系统手势区被吞掉。
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
       child: SafeArea(
         top: false,
-        child: Row(
-          children: <Widget>[
-            _SelectionAction(
-              icon: favorited ? Icons.star_rounded : Icons.star_border_rounded,
-              label: '收藏',
-              color: favorited ? AppColors.primary : null,
-              onTap: onFavorite,
+        minimum: const EdgeInsets.only(bottom: 24),
+        child: Material(
+          color: context.cardColorHigh,
+          elevation: 10,
+          shadowColor: Colors.black26,
+          borderRadius: BorderRadius.circular(20),
+          clipBehavior: Clip.antiAlias,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
+            child: Row(
+              children: <Widget>[
+                _SelectionAction(
+                  icon: favorited
+                      ? Icons.star_rounded
+                      : Icons.star_border_rounded,
+                  label: '收藏',
+                  color: favorited ? AppColors.primary : null,
+                  onTap: onFavorite,
+                ),
+                _SelectionAction(
+                  icon: Icons.folder_copy_outlined,
+                  label: '分类',
+                  onTap: onCategory,
+                ),
+                _SelectionAction(
+                  icon: Icons.playlist_add_rounded,
+                  label: '播放列表',
+                  onTap: onPlaylist,
+                ),
+                _SelectionAction(
+                  icon: Icons.more_horiz_rounded,
+                  label: '更多',
+                  onTap: onMore,
+                ),
+              ],
             ),
-            _SelectionAction(
-              icon: Icons.folder_copy_outlined,
-              label: '分类',
-              onTap: onCategory,
-            ),
-            _SelectionAction(
-              icon: Icons.playlist_add_rounded,
-              label: '播放列表',
-              onTap: onPlaylist,
-            ),
-            _SelectionAction(
-              icon: Icons.more_horiz_rounded,
-              label: '更多',
-              onTap: onMore,
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _SelectionAction extends StatelessWidget {
+class _SelectionAction extends StatefulWidget {
   const _SelectionAction({
     required this.icon,
     required this.label,
@@ -124,19 +139,70 @@ class _SelectionAction extends StatelessWidget {
   final Color? color;
 
   @override
+  State<_SelectionAction> createState() => _SelectionActionState();
+}
+
+class _SelectionActionState extends State<_SelectionAction> {
+  bool _pressed = false;
+  DateTime? _lastFired;
+
+  void _setPressed(bool value) {
+    if (_pressed == value) return;
+    setState(() => _pressed = value);
+  }
+
+  /// 在「按下」时就执行，而不是等抬手。
+  ///
+  /// 部分 ROM 的系统手势区会把底部的抬手事件取消掉（只给一个 pointer cancel），
+  /// 表现就是「按下去有水波纹，但什么也没发生」。这里不等抬手，按下即响应；
+  /// 再用 500ms 去抖防止连点重复打开面板。
+  void _fire() {
+    final DateTime now = DateTime.now();
+    if (_lastFired != null &&
+        now.difference(_lastFired!) < const Duration(milliseconds: 500)) {
+      return;
+    }
+    _lastFired = now;
+    debugPrint('[ReelBox] selection action: ${widget.label}');
+    widget.onTap();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final Color iconColor = widget.color ?? context.textPrimary;
+    final Color pressColor = context.isDark
+        ? Colors.white.withValues(alpha: 0.10)
+        : Colors.black.withValues(alpha: 0.06);
     return Expanded(
-      child: InkWell(
-        onTap: onTap,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (TapDownDetails _) {
+          _setPressed(true);
+          _fire();
+        },
+        onTapUp: (TapUpDetails _) => _setPressed(false),
+        onTapCancel: () => _setPressed(false),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 7),
+          // 触摸热区约 56dp，手指不用点得很准。
+          padding: const EdgeInsets.symmetric(vertical: 6),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(icon, size: 21, color: color ?? context.textPrimary),
-              const SizedBox(height: 3),
+              // 圆形的按压反馈，比 InkWell 的整条矩形水波纹小得多。
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 110),
+                width: 38,
+                height: 34,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _pressed ? pressColor : Colors.transparent,
+                ),
+                child: Icon(widget.icon, size: 21, color: iconColor),
+              ),
+              const SizedBox(height: 2),
               Text(
-                label,
+                widget.label,
                 style: TextStyle(fontSize: 10.5, color: context.textSecondary),
               ),
             ],

@@ -97,28 +97,27 @@ class _FolderPageState extends ConsumerState<FolderPage>
                           showVideoActionSheet(context, ref, item),
                     ),
             ),
+            if (selectionMode)
+              SelectionActionBar(
+                favorited: selectedIds.every(
+                  (String id) =>
+                      ref
+                          .read(libraryControllerProvider)
+                          .itemById(id)
+                          ?.isFavorite ??
+                      false,
+                ),
+                onFavorite: () =>
+                    showFavoriteSheet(context, ref, mediaIds: selectedIds),
+                onCategory: () =>
+                    showCategoryPicker(context, ref, mediaIds: selectedIds),
+                onPlaylist: () =>
+                    showPlaylistPicker(context, ref, mediaIds: selectedIds),
+                onMore: () => showBatchActionSheet(context, ref, selectedIds),
+              ),
           ],
         ),
       ),
-      bottomNavigationBar: selectionMode
-          ? SelectionActionBar(
-              favorited: selectedIds.every(
-                (String id) =>
-                    ref
-                        .read(libraryControllerProvider)
-                        .itemById(id)
-                        ?.isFavorite ??
-                    false,
-              ),
-              onFavorite: () =>
-                  showFavoriteSheet(context, ref, mediaIds: selectedIds),
-              onCategory: () =>
-                  showCategoryPicker(context, ref, mediaIds: selectedIds),
-              onPlaylist: () =>
-                  showPlaylistPicker(context, ref, mediaIds: selectedIds),
-              onMore: () => showBatchActionSheet(context, ref, selectedIds),
-            )
-          : null,
     );
   }
 }

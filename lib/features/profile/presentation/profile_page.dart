@@ -14,7 +14,7 @@ import '../../settings/domain/app_settings.dart';
 class ProfilePage extends ConsumerWidget {
   const ProfilePage({super.key});
 
-  static const String version = '1.0.2';
+  static const String version = '1.0.3';
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
