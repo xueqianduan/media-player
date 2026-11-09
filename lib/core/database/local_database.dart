@@ -103,6 +103,8 @@ class LocalDatabase {
     data['categories'] ??= <dynamic>[];
     data['playlists'] ??= <dynamic>[];
     data['progress'] ??= <dynamic>[];
+    // 收藏夹（可多选），旧版本只有 media.isFavorite 布尔值。
+    data['favoriteFolders'] ??= <dynamic>[];
     data['settings'] ??= <String, dynamic>{};
     data['permission'] ??= 'unknown';
     return data;

@@ -497,6 +497,54 @@ class PlaybackProgress {
   }
 }
 
+/// 收藏夹：用户可以建立多个，用于把收藏的视频分组。
+class FavoriteFolder {
+  const FavoriteFolder({
+    required this.id,
+    required this.name,
+    required this.createdAt,
+    this.mediaIds = const <String>[],
+  });
+
+  final String id;
+  final String name;
+  final DateTime createdAt;
+  final List<String> mediaIds;
+
+  int get itemCount => mediaIds.length;
+
+  bool contains(String mediaId) => mediaIds.contains(mediaId);
+
+  FavoriteFolder copyWith({String? name, List<String>? mediaIds}) {
+    return FavoriteFolder(
+      id: id,
+      name: name ?? this.name,
+      createdAt: createdAt,
+      mediaIds: mediaIds ?? this.mediaIds,
+    );
+  }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'id': id,
+    'name': name,
+    'createdAt': createdAt.toIso8601String(),
+    'mediaIds': mediaIds,
+  };
+
+  static FavoriteFolder fromJson(Map<String, dynamic> json) {
+    return FavoriteFolder(
+      id: json['id'] as String? ?? '',
+      name: (json['name'] as String?)?.trim().isNotEmpty == true
+          ? (json['name'] as String).trim()
+          : '未命名收藏夹',
+      createdAt: _parseTime(json['createdAt']) ?? DateTime.now(),
+      mediaIds: (json['mediaIds'] as List<dynamic>? ?? <dynamic>[])
+          .map((dynamic id) => id.toString())
+          .toList(),
+    );
+  }
+}
+
 /// 视频库快照。UI 只读取该快照，所有写操作走 Repository。
 class LibraryState {
   const LibraryState({
@@ -504,6 +552,7 @@ class LibraryState {
     this.folders = const <SourceFolder>[],
     this.categories = const <Category>[],
     this.playlists = const <Playlist>[],
+    this.favoriteFolders = const <FavoriteFolder>[],
     this.progress = const <String, PlaybackProgress>{},
     this.permission = MediaPermission.unknown,
     this.isScanning = false,
@@ -516,6 +565,7 @@ class LibraryState {
   final List<SourceFolder> folders;
   final List<Category> categories;
   final List<Playlist> playlists;
+  final List<FavoriteFolder> favoriteFolders;
   final Map<String, PlaybackProgress> progress;
   final MediaPermission permission;
   final bool isScanning;
@@ -554,6 +604,18 @@ class LibraryState {
     }
     return null;
   }
+
+  FavoriteFolder? favoriteFolderById(String id) {
+    for (final FavoriteFolder folder in favoriteFolders) {
+      if (folder.id == id) return folder;
+    }
+    return null;
+  }
+
+  /// 该视频所属的收藏夹。
+  List<FavoriteFolder> foldersOf(String mediaId) => favoriteFolders
+      .where((FavoriteFolder folder) => folder.contains(mediaId))
+      .toList(growable: false);
 
   Playlist? playlistById(String id) {
     for (final Playlist playlist in playlists) {
@@ -672,6 +734,7 @@ class LibraryState {
     List<SourceFolder>? folders,
     List<Category>? categories,
     List<Playlist>? playlists,
+    List<FavoriteFolder>? favoriteFolders,
     Map<String, PlaybackProgress>? progress,
     MediaPermission? permission,
     bool? isScanning,
@@ -685,6 +748,7 @@ class LibraryState {
       folders: folders ?? this.folders,
       categories: categories ?? this.categories,
       playlists: playlists ?? this.playlists,
+      favoriteFolders: favoriteFolders ?? this.favoriteFolders,
       progress: progress ?? this.progress,
       permission: permission ?? this.permission,
       isScanning: isScanning ?? this.isScanning,
@@ -701,6 +765,9 @@ class LibraryState {
         .map((Category category) => category.toJson())
         .toList(),
     'playlists': playlists.map((Playlist list) => list.toJson()).toList(),
+    'favoriteFolders': favoriteFolders
+        .map((FavoriteFolder folder) => folder.toJson())
+        .toList(),
     'progress': progress.values
         .map((PlaybackProgress record) => record.toJson())
         .toList(),

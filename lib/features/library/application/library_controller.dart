@@ -105,6 +105,35 @@ class LibraryController extends Notifier<LibraryState> {
     state = _repository.setFavorite(state, ids, value);
   }
 
+  // ---------------------------------------------------------------- 收藏夹
+
+  String? createFavoriteFolderAndGetId(String name) {
+    final Set<String> before = state.favoriteFolders
+        .map((FavoriteFolder folder) => folder.id)
+        .toSet();
+    state = _repository.createFavoriteFolder(state, name);
+    for (final FavoriteFolder folder in state.favoriteFolders) {
+      if (!before.contains(folder.id)) return folder.id;
+    }
+    return null;
+  }
+
+  void renameFavoriteFolder(String folderId, String name) {
+    state = _repository.renameFavoriteFolder(state, folderId, name);
+  }
+
+  void deleteFavoriteFolder(String folderId) {
+    state = _repository.deleteFavoriteFolder(state, folderId);
+  }
+
+  void addToFavoriteFolders(Set<String> mediaIds, Set<String> folderIds) {
+    state = _repository.addToFavoriteFolders(state, mediaIds, folderIds);
+  }
+
+  void removeFromFavoriteFolders(Set<String> mediaIds, Set<String> folderIds) {
+    state = _repository.removeFromFavoriteFolders(state, mediaIds, folderIds);
+  }
+
   void rename(String mediaId, String name) {
     state = _repository.renameMedia(state, mediaId, name);
   }

@@ -41,6 +41,30 @@ class LibraryRepository {
         .whereType<Map<String, dynamic>>()
         .map(Playlist.fromJson)
         .toList();
+    List<FavoriteFolder> favoriteFolders = database
+        .readList('favoriteFolders')
+        .whereType<Map<String, dynamic>>()
+        .map(FavoriteFolder.fromJson)
+        .toList();
+
+    // 旧版本只有 isFavorite 布尔值：升级后把它们归入「我的收藏」。
+    if (favoriteFolders.isEmpty) {
+      final List<String> legacyIds = media
+          .where((MediaItem item) => item.isFavorite)
+          .map((MediaItem item) => item.id)
+          .toList();
+      if (legacyIds.isNotEmpty) {
+        favoriteFolders = <FavoriteFolder>[
+          FavoriteFolder(
+            id: _uuid.v4(),
+            name: '我的收藏',
+            createdAt: DateTime.now(),
+            mediaIds: legacyIds,
+          ),
+        ];
+      }
+    }
+
     final Map<String, PlaybackProgress> progress = <String, PlaybackProgress>{};
     for (final Map<String, dynamic> json
         in database.readList('progress').whereType<Map<String, dynamic>>()) {
@@ -53,6 +77,7 @@ class LibraryRepository {
       folders: folders,
       categories: categories,
       playlists: playlists,
+      favoriteFolders: favoriteFolders,
       progress: progress,
       permission: MediaPermission.values.firstWhere(
         (MediaPermission value) =>
@@ -215,16 +240,9 @@ class LibraryRepository {
   // ---------------------------------------------------------------- 视频
 
   LibraryState toggleFavorite(LibraryState state, String mediaId) {
-    final List<MediaItem> media = state.media.map((MediaItem item) {
-      if (item.id != mediaId) return item;
-      return item.copyWith(
-        isFavorite: !item.isFavorite,
-        updatedAt: DateTime.now(),
-      );
-    }).toList();
-    final LibraryState next = state.copyWith(media: media);
-    _persist(next);
-    return next;
+    final MediaItem? item = state.itemById(mediaId);
+    if (item == null) return state;
+    return _applyFavorite(state, <String>{mediaId}, value: !item.isFavorite);
   }
 
   LibraryState setFavorite(
@@ -232,11 +250,183 @@ class LibraryRepository {
     Set<String> mediaIds,
     bool value,
   ) {
+    return _applyFavorite(state, mediaIds, value: value);
+  }
+
+  /// 收藏 / 取消收藏的统一入口：收藏时放进默认收藏夹，取消时移出所有收藏夹。
+  LibraryState _applyFavorite(
+    LibraryState state,
+    Set<String> mediaIds, {
+    required bool value,
+  }) {
+    if (mediaIds.isEmpty) return state;
+
+    List<FavoriteFolder> folders = state.favoriteFolders;
+    if (value) {
+      if (folders.isEmpty) {
+        folders = <FavoriteFolder>[
+          FavoriteFolder(
+            id: _uuid.v4(),
+            name: '我的收藏',
+            createdAt: DateTime.now(),
+          ),
+        ];
+      }
+      final String defaultId = folders.first.id;
+      folders = folders.map((FavoriteFolder folder) {
+        if (folder.id != defaultId) return folder;
+        final Set<String> ids = <String>{...folder.mediaIds, ...mediaIds};
+        return folder.copyWith(mediaIds: ids.toList());
+      }).toList();
+    } else {
+      folders = folders
+          .map(
+            (FavoriteFolder folder) => folder.copyWith(
+              mediaIds: folder.mediaIds
+                  .where((String id) => !mediaIds.contains(id))
+                  .toList(),
+            ),
+          )
+          .toList();
+    }
+
+    final Set<String> remaining = <String>{
+      for (final FavoriteFolder folder in folders) ...folder.mediaIds,
+    };
     final List<MediaItem> media = state.media.map((MediaItem item) {
       if (!mediaIds.contains(item.id)) return item;
-      return item.copyWith(isFavorite: value, updatedAt: DateTime.now());
+      return item.copyWith(
+        isFavorite: remaining.contains(item.id),
+        updatedAt: DateTime.now(),
+      );
     }).toList();
-    final LibraryState next = state.copyWith(media: media);
+
+    final LibraryState next = state.copyWith(
+      media: media,
+      favoriteFolders: folders,
+    );
+    _persist(next);
+    return next;
+  }
+
+  // ---------------------------------------------------------------- 收藏夹
+
+  LibraryState createFavoriteFolder(LibraryState state, String name) {
+    final String trimmed = name.trim();
+    if (trimmed.isEmpty) return state;
+    final FavoriteFolder folder = FavoriteFolder(
+      id: _uuid.v4(),
+      name: trimmed,
+      createdAt: DateTime.now(),
+    );
+    final LibraryState next = state.copyWith(
+      favoriteFolders: <FavoriteFolder>[...state.favoriteFolders, folder],
+    );
+    _persist(next);
+    return next;
+  }
+
+  LibraryState renameFavoriteFolder(
+    LibraryState state,
+    String folderId,
+    String name,
+  ) {
+    final String trimmed = name.trim();
+    if (trimmed.isEmpty) return state;
+    final LibraryState next = state.copyWith(
+      favoriteFolders: state.favoriteFolders
+          .map(
+            (FavoriteFolder folder) =>
+                folder.id == folderId ? folder.copyWith(name: trimmed) : folder,
+          )
+          .toList(),
+    );
+    _persist(next);
+    return next;
+  }
+
+  LibraryState deleteFavoriteFolder(LibraryState state, String folderId) {
+    final FavoriteFolder? removed = state.favoriteFolderById(folderId);
+    if (removed == null) return state;
+
+    final List<FavoriteFolder> folders = state.favoriteFolders
+        .where((FavoriteFolder folder) => folder.id != folderId)
+        .toList();
+    final Set<String> remaining = <String>{
+      for (final FavoriteFolder folder in folders) ...folder.mediaIds,
+    };
+    final Set<String> affected = removed.mediaIds.toSet();
+
+    final LibraryState next = state.copyWith(
+      favoriteFolders: folders,
+      media: state.media.map((MediaItem item) {
+        if (!affected.contains(item.id)) return item;
+        return item.copyWith(
+          isFavorite: remaining.contains(item.id),
+          updatedAt: DateTime.now(),
+        );
+      }).toList(),
+    );
+    _persist(next);
+    return next;
+  }
+
+  LibraryState addToFavoriteFolders(
+    LibraryState state,
+    Set<String> mediaIds,
+    Set<String> folderIds,
+  ) {
+    if (mediaIds.isEmpty || folderIds.isEmpty) return state;
+    final List<FavoriteFolder> folders = state.favoriteFolders.map((
+      FavoriteFolder folder,
+    ) {
+      if (!folderIds.contains(folder.id)) return folder;
+      final Set<String> ids = <String>{...folder.mediaIds, ...mediaIds};
+      return folder.copyWith(mediaIds: ids.toList());
+    }).toList();
+
+    final LibraryState next = state.copyWith(
+      favoriteFolders: folders,
+      media: state.media.map((MediaItem item) {
+        if (!mediaIds.contains(item.id) || item.isFavorite) return item;
+        return item.copyWith(isFavorite: true, updatedAt: DateTime.now());
+      }).toList(),
+    );
+    _persist(next);
+    return next;
+  }
+
+  LibraryState removeFromFavoriteFolders(
+    LibraryState state,
+    Set<String> mediaIds,
+    Set<String> folderIds,
+  ) {
+    if (mediaIds.isEmpty || folderIds.isEmpty) return state;
+    final List<FavoriteFolder> folders = state.favoriteFolders.map((
+      FavoriteFolder folder,
+    ) {
+      if (!folderIds.contains(folder.id)) return folder;
+      return folder.copyWith(
+        mediaIds: folder.mediaIds
+            .where((String id) => !mediaIds.contains(id))
+            .toList(),
+      );
+    }).toList();
+
+    final Set<String> remaining = <String>{
+      for (final FavoriteFolder folder in folders) ...folder.mediaIds,
+    };
+
+    final LibraryState next = state.copyWith(
+      favoriteFolders: folders,
+      media: state.media.map((MediaItem item) {
+        if (!mediaIds.contains(item.id)) return item;
+        return item.copyWith(
+          isFavorite: remaining.contains(item.id),
+          updatedAt: DateTime.now(),
+        );
+      }).toList(),
+    );
     _persist(next);
     return next;
   }
@@ -257,6 +447,16 @@ class LibraryRepository {
   LibraryState removeFromLibrary(LibraryState state, Set<String> mediaIds) {
     final List<MediaItem> media = state.media
         .where((MediaItem item) => !mediaIds.contains(item.id))
+        .toList();
+    // 收藏夹里也要清掉这些 id，否则数量统计会对不上。
+    final List<FavoriteFolder> folders = state.favoriteFolders
+        .map(
+          (FavoriteFolder folder) => folder.copyWith(
+            mediaIds: folder.mediaIds
+                .where((String id) => !mediaIds.contains(id))
+                .toList(),
+          ),
+        )
         .toList();
     final List<Category> categories = state.categories
         .map(
@@ -285,6 +485,7 @@ class LibraryRepository {
       media: media,
       categories: categories,
       playlists: playlists,
+      favoriteFolders: folders,
       progress: progress,
       folders: _recalculateFolders(media, state.folders),
     );
@@ -619,6 +820,12 @@ class LibraryRepository {
       ..writeTable(
         'playlists',
         state.playlists.map((Playlist list) => list.toJson()).toList(),
+      )
+      ..writeTable(
+        'favoriteFolders',
+        state.favoriteFolders
+            .map((FavoriteFolder folder) => folder.toJson())
+            .toList(),
       )
       ..writeTable(
         'progress',

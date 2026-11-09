@@ -100,13 +100,16 @@ class _CategoryDetailPageState extends ConsumerState<CategoryDetailPage>
       ),
       bottomNavigationBar: selectionMode
           ? SelectionActionBar(
-              onFavorite: () {
-                ref
-                    .read(libraryControllerProvider.notifier)
-                    .setFavorite(selectedIds, true);
-                showToast(context, '已收藏 ${selectedIds.length} 个视频');
-                exitSelection();
-              },
+              favorited: selectedIds.every(
+                (String id) =>
+                    ref
+                        .read(libraryControllerProvider)
+                        .itemById(id)
+                        ?.isFavorite ??
+                    false,
+              ),
+              onFavorite: () =>
+                  showFavoriteSheet(context, ref, mediaIds: selectedIds),
               onCategory: () =>
                   showCategoryPicker(context, ref, mediaIds: selectedIds),
               onPlaylist: () =>

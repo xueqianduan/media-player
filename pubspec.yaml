@@ -2,7 +2,7 @@ name: myplayer
 description: "ReelBox - 轻量级跨平台本地视频播放器"
 publish_to: 'none'
 
-version: 1.0.1+2
+version: 1.0.2+4
 
 environment:
   sdk: ^3.13.0-252.0.dev

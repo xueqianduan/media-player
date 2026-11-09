@@ -21,12 +21,24 @@ class FavoritesPage extends ConsumerStatefulWidget {
 
 class _FavoritesPageState extends ConsumerState<FavoritesPage>
     with MediaSelectionState<FavoritesPage> {
+  /// 当前筛选的收藏夹；为空表示全部。
+  String? _favoriteFolderId;
+
   @override
   Widget build(BuildContext context) {
     final LibraryState state = ref.watch(libraryControllerProvider);
     final settings = ref.watch(settingsControllerProvider);
+    final List<FavoriteFolder> folders = state.favoriteFolders;
+    final FavoriteFolder? activeFolder = _favoriteFolderId == null
+        ? null
+        : state.favoriteFolderById(_favoriteFolderId!);
+    final List<MediaItem> allFavorites = state.favorites;
     final List<MediaItem> items = sortMedia(
-      state.favorites,
+      activeFolder == null
+          ? allFavorites
+          : allFavorites
+                .where((MediaItem item) => activeFolder.contains(item.id))
+                .toList(),
       settings.sortOption,
     );
 
@@ -73,12 +85,38 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
                   ),
                 ],
               ),
+            if (!selectionMode && folders.isNotEmpty)
+              SizedBox(
+                height: 38,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  children: <Widget>[
+                    _FolderChip(
+                      label: '全部',
+                      selected: activeFolder == null,
+                      onTap: () => setState(() => _favoriteFolderId = null),
+                    ),
+                    for (final FavoriteFolder folder in folders) ...<Widget>[
+                      const SizedBox(width: 8),
+                      _FolderChip(
+                        label: '${folder.name} ${folder.itemCount}',
+                        selected: activeFolder?.id == folder.id,
+                        onTap: () =>
+                            setState(() => _favoriteFolderId = folder.id),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             Expanded(
               child: items.isEmpty
-                  ? const EmptyState(
+                  ? EmptyState(
                       icon: Icons.star_outline_rounded,
-                      title: '还没有收藏的视频',
-                      message: '在视频的更多操作里点击「收藏」，就能在这里快速找到它。',
+                      title: allFavorites.isEmpty ? '还没有收藏的视频' : '这个收藏夹还是空的',
+                      message: allFavorites.isEmpty
+                          ? '长按视频点「收藏」，选择收藏夹即可在这里找到它。'
+                          : '在批量操作里把视频加入这个收藏夹，就会显示在这里。',
                     )
                   : MediaCollectionView(
                       items: items,
@@ -97,13 +135,16 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
       ),
       bottomNavigationBar: selectionMode
           ? SelectionActionBar(
-              onFavorite: () {
-                ref
-                    .read(libraryControllerProvider.notifier)
-                    .setFavorite(selectedIds, false);
-                showToast(context, '已取消收藏');
-                exitSelection();
-              },
+              favorited: selectedIds.every(
+                (String id) =>
+                    ref
+                        .read(libraryControllerProvider)
+                        .itemById(id)
+                        ?.isFavorite ??
+                    false,
+              ),
+              onFavorite: () =>
+                  showFavoriteSheet(context, ref, mediaIds: selectedIds),
               onCategory: () =>
                   showCategoryPicker(context, ref, mediaIds: selectedIds),
               onPlaylist: () =>
@@ -111,6 +152,48 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
               onMore: () => showBatchActionSheet(context, ref, selectedIds),
             )
           : null,
+    );
+  }
+}
+
+/// 收藏页顶部的收藏夹筛选胶囊。
+class _FolderChip extends StatelessWidget {
+  const _FolderChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 13),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary : context.cardColor,
+          borderRadius: BorderRadius.circular(19),
+          border: Border.all(
+            color: selected
+                ? AppColors.primary
+                : context.dividerColor.withValues(alpha: 0.7),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+            color: selected ? Colors.white : context.textSecondary,
+          ),
+        ),
+      ),
     );
   }
 }

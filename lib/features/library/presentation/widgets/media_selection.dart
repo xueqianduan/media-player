@@ -62,7 +62,11 @@ class SelectionActionBar extends StatelessWidget {
     required this.onCategory,
     required this.onPlaylist,
     required this.onMore,
+    this.favorited = false,
   });
+
+  /// 选中项是否已全部收藏：已收藏用实心星，否则空心星。
+  final bool favorited;
 
   final VoidCallback onFavorite;
   final VoidCallback onCategory;
@@ -79,8 +83,9 @@ class SelectionActionBar extends StatelessWidget {
         child: Row(
           children: <Widget>[
             _SelectionAction(
-              icon: Icons.star_rounded,
+              icon: favorited ? Icons.star_rounded : Icons.star_border_rounded,
               label: '收藏',
+              color: favorited ? AppColors.primary : null,
               onTap: onFavorite,
             ),
             _SelectionAction(
@@ -110,11 +115,13 @@ class _SelectionAction extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
+    this.color,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
@@ -126,7 +133,7 @@ class _SelectionAction extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(icon, size: 21, color: context.textPrimary),
+              Icon(icon, size: 21, color: color ?? context.textPrimary),
               const SizedBox(height: 3),
               Text(
                 label,
