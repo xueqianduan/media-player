@@ -1,6 +1,8 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:media_kit/media_kit.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:flutter/widgets.dart';
 
@@ -70,12 +72,42 @@ class MediaKitPlaybackEngine implements VideoPlaybackEngine {
     return index < 0 ? path : path.substring(index + 1);
   }
 
-  /// 抓取当前画面（不含控制层与手势层），返回 PNG 字节。
+  /// 抓取当前视频帧（不含控制层与手势层），返回 JPEG 字节。
+  ///
+  /// 优先让 mpv 自己把帧写成文件：内置的 `screenshot()` 会在 isolate 里逐像素
+  /// 编码，安卓上又慢又容易失败。写文件失败再回退到内置实现。
   Future<Uint8List?> screenshot() async {
     try {
-      return await _player.screenshot(format: 'image/png');
+      final Directory directory = await getTemporaryDirectory();
+      final String path =
+          '${directory.path}/reelbox_shot_'
+          '${DateTime.now().millisecondsSinceEpoch}.jpg';
+      // NativePlayer 的 command 不在 PlatformPlayer 接口里，用 dynamic 调用。
+      final dynamic platform = _player.platform;
+      await platform?.command('screenshot-to-file', <String>[path, 'video']);
+      final File file = File(path);
+      // mpv 命令返回后文件一般已写完，这里再等一小会儿兜底。
+      for (int i = 0; i < 5; i++) {
+        if (await file.exists()) break;
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+      }
+      if (await file.exists()) {
+        final Uint8List bytes = await file.readAsBytes();
+        await file.delete();
+        debugPrint('[ReelBox] screenshot ok, ${bytes.length} bytes');
+        if (bytes.isNotEmpty) return bytes;
+      }
+      debugPrint('[ReelBox] screenshot-to-file produced no file');
     } on Object catch (error) {
-      debugPrint('[ReelBox] screenshot failed: $error');
+      debugPrint('[ReelBox] screenshot-to-file failed: $error');
+    }
+
+    try {
+      final Uint8List? bytes = await _player.screenshot(format: 'image/jpeg');
+      debugPrint('[ReelBox] screenshot fallback ${bytes?.length ?? 0} bytes');
+      return bytes;
+    } on Object catch (error) {
+      debugPrint('[ReelBox] screenshot fallback failed: $error');
       return null;
     }
   }

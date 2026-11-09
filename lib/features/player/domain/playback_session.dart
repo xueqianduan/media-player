@@ -98,6 +98,14 @@ class PlaybackSession {
   String get currentTitle => currentItem?.displayName ?? '';
 
   /// 开始播放。[startAt] 为空时从头播放。
+  Future<String?> _resolveWithTimeout(MediaItem item) async {
+    try {
+      return await resolveSource(item).timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      return null;
+    }
+  }
+
   Future<void> start({Duration? startAt}) async {
     await _openCurrent(startAt: startAt ?? Duration.zero);
   }
@@ -133,9 +141,8 @@ class PlaybackSession {
         'type=${item.sourceType.name} locator=${item.sourceLocator}',
       );
       // 解析也要有上限：photo_manager 在云资源上可能长时间不返回。
-      final String? source = await resolveSource(
-        item,
-      ).timeout(const Duration(seconds: 10), onTimeout: () => null);
+      // 用 try/catch 而不是 onTimeout 回调，避免解析器返回非空 Future 时的类型问题。
+      final String? source = await _resolveWithTimeout(item);
       if (source == null || source.isEmpty) {
         throw const PlaybackException('视频文件不存在或访问权限已失效');
       }

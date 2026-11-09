@@ -23,6 +23,12 @@ class RecentPage extends ConsumerWidget {
         .where((MediaItem item) => !continueItems.contains(item))
         .toList();
 
+    debugPrint(
+      '[ReelBox] recent page media=${state.media.length} '
+      'progress=${state.progress.length} '
+      'continue=${continueItems.length} played=${played.length}',
+    );
+
     final DateTime now = DateTime.now();
     final DateTime startOfToday = DateTime(now.year, now.month, now.day);
     final DateTime startOfYesterday = startOfToday.subtract(
@@ -42,55 +48,70 @@ class RecentPage extends ConsumerWidget {
       }
     }
 
-    return SafeArea(
-      bottom: false,
-      child: Column(
-        children: <Widget>[
-          PageHeader(
-            title: '最近播放',
-            actions: <Widget>[
-              MediaPageActions(
-                onSearch: () => context.push('/search'),
-                onSort: null,
-                showSort: false,
-                onToggleView: null,
-                showViewToggle: false,
+    // 现在它是独立路由（从「我的」进入），必须自带背景，
+    // 否则会露出黑色底层、深色文字几乎看不见。
+    return Scaffold(
+      backgroundColor: context.appBackground,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: <Widget>[
+            PageHeader(
+              title: '最近播放',
+              leading: AppIconButton(
+                icon: Icons.arrow_back_ios_new_rounded,
+                iconSize: 18,
+                onPressed: () =>
+                    context.canPop() ? context.pop() : context.go('/'),
               ),
-            ],
-          ),
-          Expanded(
-            child: continueItems.isEmpty && played.isEmpty
-                ? const EmptyState(
-                    icon: Icons.history_rounded,
-                    title: '还没有观看记录',
-                    message: '播放过的视频会出现在这里，没看完的可以在「继续观看」中接着看。',
-                  )
-                : ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                    children: <Widget>[
-                      if (continueItems.isNotEmpty) ...<Widget>[
-                        const SectionHeader(title: '继续观看'),
-                        ...continueItems
-                            .take(3)
-                            .map(
-                              (MediaItem item) => Padding(
-                                padding: const EdgeInsets.only(bottom: 10),
-                                child: _ContinueWatchingCard(
-                                  item: item,
-                                  progress: state.progress[item.id],
-                                  onTap: () => playSingleVideo(context, item),
+              actions: <Widget>[
+                MediaPageActions(
+                  onSearch: () => context.push('/search'),
+                  onSort: null,
+                  showSort: false,
+                  onToggleView: null,
+                  showViewToggle: false,
+                ),
+              ],
+            ),
+            Expanded(
+              child: continueItems.isEmpty && played.isEmpty
+                  ? EmptyState(
+                      icon: state.media.isEmpty
+                          ? Icons.video_library_outlined
+                          : Icons.history_rounded,
+                      title: state.media.isEmpty ? '视频库还是空的' : '还没有观看记录',
+                      message: state.media.isEmpty
+                          ? '先回到「本地」授权扫描或导入视频，播放过的视频会出现在这里。'
+                          : '播放过的视频会出现在这里，没看完的可以在「继续观看」中接着看。',
+                    )
+                  : ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                      children: <Widget>[
+                        if (continueItems.isNotEmpty) ...<Widget>[
+                          const SectionHeader(title: '继续观看'),
+                          ...continueItems
+                              .take(3)
+                              .map(
+                                (MediaItem item) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: _ContinueWatchingCard(
+                                    item: item,
+                                    progress: state.progress[item.id],
+                                    onTap: () => playSingleVideo(context, item),
+                                  ),
                                 ),
                               ),
-                            ),
-                        const SizedBox(height: 4),
+                          const SizedBox(height: 4),
+                        ],
+                        ..._buildGroup(context, ref, state, '今天', today),
+                        ..._buildGroup(context, ref, state, '昨天', yesterday),
+                        ..._buildGroup(context, ref, state, '更早', earlier),
                       ],
-                      ..._buildGroup(context, ref, state, '今天', today),
-                      ..._buildGroup(context, ref, state, '昨天', yesterday),
-                      ..._buildGroup(context, ref, state, '更早', earlier),
-                    ],
-                  ),
-          ),
-        ],
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -49,6 +49,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   double _boostBase = 1;
   double _boostStart = 2;
   double _lastBoost = 2;
+
+  /// 长按调速时，横向滑动多少逻辑像素换一档（0.25x）。
+  double _boostStepPx = 72;
   bool _resumeTipVisible = false;
   Timer? _resumeTipTimer;
   // 双指缩放
@@ -61,6 +64,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   Offset _pinchStartOffset = Offset.zero;
   bool _pinching = false;
   bool _locked = false;
+  bool _lockIconVisible = false;
+  Timer? _lockIconTimer;
 
   @override
   void initState() {
@@ -312,6 +317,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       ref.read(settingsControllerProvider.notifier).markScreenshotTipShown();
     }
 
+    _showHint('正在截图…');
     final Uint8List? bytes = await engine.screenshot();
     if (bytes == null || bytes.isEmpty) {
       if (mounted) _showHint('截图失败，请重试');
@@ -340,17 +346,53 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   void _toggleLock() {
     final bool next = !_locked;
     _resumeTipTimer?.cancel();
+    _lockIconTimer?.cancel();
+    _lockIconTimer?.cancel();
     setState(() {
       _locked = next;
+      _lockIconVisible = false;
       _panel = null;
       _resumeTipVisible = false;
       _controlsVisible = !next;
     });
     if (next) {
-      _showHint('画面已锁定，点击左侧锁图标解锁');
+      _showHint('画面已锁定，点击屏幕显示解锁按钮');
     } else {
       _scheduleHide();
     }
+  }
+
+  /// 锁屏状态下点屏幕：只浮现一个锁图标，几秒后自动消失。
+  void _showLockIcon() {
+    _lockIconTimer?.cancel();
+    if (!_lockIconVisible) setState(() => _lockIconVisible = true);
+    _lockIconTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _lockIconVisible = false);
+    });
+  }
+
+  /// 左侧竖排浮层：截图 / 锁屏。lockedOnly 时只保留锁图标且位置不变。
+  Widget _buildSideRail({bool lockedOnly = false}) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (lockedOnly)
+          const SizedBox(height: 50)
+        else ...<Widget>[
+          _SideIconButton(
+            icon: Icons.photo_camera_outlined,
+            tooltip: '截图',
+            onTap: _takeScreenshot,
+          ),
+          const SizedBox(height: 10),
+        ],
+        _SideIconButton(
+          icon: lockedOnly ? Icons.lock_rounded : Icons.lock_open_rounded,
+          tooltip: lockedOnly ? '解锁' : '锁定画面',
+          onTap: _toggleLock,
+        ),
+      ],
+    );
   }
 
   void _showResumeTip() {
@@ -595,23 +637,27 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     _boostBase = _session.speed.value;
     _boostStart = ref.read(settingsControllerProvider).longPressSpeed;
     _lastBoost = _boostStart;
-    _boosted = true;
+    // 灵敏度：横向滑过约 1/20 屏宽就换一档（0.25x），
+    // 半屏大约能调 2.5x，比原来固定 70px 一档明显更跟手。
+    _boostStepPx = (MediaQuery.sizeOf(context).width / 20).clamp(14.0, 56.0);
+    _hintTimer?.cancel();
+    setState(() {
+      _boosted = true;
+      _gestureHint = null;
+    });
     await _session.setSpeed(_boostStart);
-    if (mounted) {
-      _showHint('${_formatSpeed(_boostStart)}x · 左右滑动调速');
-    }
   }
 
   /// 长按后左右滑动：以 0.25x 为步进，在 0.5x ~ 5x 之间调整。
   Future<void> _onBoostMove(LongPressMoveUpdateDetails details) async {
     if (!_boosted) return;
     final double dx = details.localOffsetFromOrigin.dx;
-    double speed = (_boostStart + dx / 70 * 0.25).clamp(0.5, 5.0);
+    double speed = (_boostStart + dx / _boostStepPx * 0.25).clamp(0.5, 5.0);
     speed = (speed * 4).roundToDouble() / 4;
     if ((speed - _lastBoost).abs() < 0.001) return;
     _lastBoost = speed;
+    // 刻度条通过 session.speed 自动刷新，这里不需要额外的文字提示。
     await _session.setSpeed(speed);
-    if (mounted) _showHint('${_formatSpeed(speed)}x');
   }
 
   Future<void> _endBoost() async {
@@ -663,7 +709,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     final double baseWidth = landscape
         ? (size.width * 0.44).clamp(300.0, 460.0).toDouble()
         : (size.width * 0.68).clamp(250.0, 330.0).toDouble();
-    // 倍速面板只放一列数字，宽度取一半即可。
+    // 倍速面板只放一列数字，宽度取一半。
     final double panelWidth = _panel == _PlayerPanel.speed
         ? baseWidth / 2
         : baseWidth;
@@ -731,7 +777,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     final double current = _session.speed.value;
     final List<double> options = AppSettings.speedOptions.reversed.toList();
     final bool compact = MediaQuery.sizeOf(context).height < 520;
-    final double rowHeight = compact ? 24 : 30;
+    final double rowHeight = compact ? 40 : 51;
     return Padding(
       padding: compact
           ? const EdgeInsets.fromLTRB(6, 6, 6, 10)
@@ -764,7 +810,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                     color: (current - value).abs() < 0.01
                         ? Colors.white
                         : Colors.white70,
-                    fontSize: compact ? 12 : 13,
+                    fontSize: compact ? 15 : 18.5,
                     fontWeight: (current - value).abs() < 0.01
                         ? FontWeight.w600
                         : FontWeight.w400,
@@ -1087,6 +1133,21 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                   );
                 },
               ),
+              if (_boosted)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Align(
+                      alignment: const Alignment(0, 0.46),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 460),
+                          child: _buildSpeedScale(),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               if (_gestureHint != null)
                 Center(
                   child: IgnorePointer(
@@ -1125,47 +1186,47 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               ),
               if (_resumeTipVisible)
                 Positioned(
-                  left: 16,
+                  // 左右安全区一起避开，横屏刘海在左侧也不会压住提示。
+                  left: 16 + MediaQuery.paddingOf(context).left,
                   // 控制栏与进度条约占底部 90dp，再加上系统手势条的安全区，
                   // 保证提示始终落在进度条上方。
                   bottom: 96 + MediaQuery.paddingOf(context).bottom,
                   child: _buildResumeTip(),
                 ),
+              // 左侧竖直浮层：截图 + 锁屏。
+              // 放进 SafeArea 再留 12dp，横屏时刘海/挖孔在左侧也不会挡住按钮。
+              Positioned.fill(
+                child: SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: IgnorePointer(
+                        ignoring: _locked || !_controlsVisible,
+                        child: AnimatedOpacity(
+                          opacity: _controlsVisible && !_locked ? 1 : 0,
+                          duration: const Duration(milliseconds: 180),
+                          child: _buildSideRail(),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              // 锁定态：点屏幕只浮现锁图标，点它解锁。
               if (_locked)
-                Positioned(
-                  left: 8,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: _toggleLock,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 9,
-                          vertical: 12,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.45),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            Icon(
-                              Icons.lock_rounded,
-                              size: 19,
-                              color: Colors.white70,
-                            ),
-                            SizedBox(height: 4),
-                            Text(
-                              '解锁',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 10,
-                              ),
-                            ),
-                          ],
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _showLockIcon,
+                    child: SafeArea(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: _lockIconVisible
+                              ? _buildSideRail(lockedOnly: true)
+                              : const SizedBox.expand(),
                         ),
                       ),
                     ),
@@ -1256,6 +1317,57 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           ),
         ),
       ],
+    );
+  }
+
+  /// 长按调速时的横向速度刻度：当前档位高亮，并带一个指示三角。
+  Widget _buildSpeedScale() {
+    final List<double> options = AppSettings.speedOptions;
+    return ValueListenableBuilder<double>(
+      valueListenable: _session.speed,
+      builder: (BuildContext context, double value, _) {
+        int current = options.indexWhere(
+          (double option) => (option - value).abs() < 0.01,
+        );
+        if (current < 0) {
+          final int fallback = options.indexWhere(
+            (double option) => (option - _lastBoost).abs() < 0.01,
+          );
+          current = fallback < 0 ? 0 : fallback;
+        }
+        return LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            // 减去容器左右各 4dp 的内边距，否则 Row 会超出 8dp。
+            final double available = constraints.maxWidth - 8;
+            // 按可用宽度决定一屏放几档，保持奇数让当前档位居中。
+            int count = (available / 46).floor().clamp(3, options.length);
+            if (count.isEven) count -= 1;
+            int start = current - count ~/ 2;
+            start = start.clamp(0, options.length - count);
+            final List<double> window = options.sublist(start, start + count);
+            final double slotWidth = available / count;
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.64),
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: Row(
+                children: <Widget>[
+                  for (final double option in window)
+                    SizedBox(
+                      width: slotWidth,
+                      child: _SpeedScaleItem(
+                        label: '${_formatSpeed(option)}x',
+                        active: (option - value).abs() < 0.01,
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -1474,8 +1586,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               onPrevious: () => _session.previous(),
               onTogglePlay: _togglePlay,
               onNext: () => _session.next(),
-              onScreenshot: _takeScreenshot,
-              onLock: _toggleLock,
               onSpeed: _showSpeedSheet,
               onOrientation: _toggleOrientation,
             );
@@ -1586,8 +1696,6 @@ class _PlayerControlBar extends StatelessWidget {
     required this.onPrevious,
     required this.onTogglePlay,
     required this.onNext,
-    required this.onScreenshot,
-    required this.onLock,
     required this.onSpeed,
     required this.onOrientation,
   });
@@ -1600,8 +1708,6 @@ class _PlayerControlBar extends StatelessWidget {
   final VoidCallback onPrevious;
   final VoidCallback onTogglePlay;
   final VoidCallback onNext;
-  final VoidCallback onScreenshot;
-  final VoidCallback onLock;
   final VoidCallback onSpeed;
   final VoidCallback onOrientation;
 
@@ -1630,19 +1736,6 @@ class _PlayerControlBar extends StatelessWidget {
             enabled: hasNext,
             onTap: onNext,
           ),
-          const SizedBox(width: 8),
-          _ControlIcon(
-            icon: Icons.camera_alt_outlined,
-            size: 22,
-            enabled: true,
-            onTap: onScreenshot,
-          ),
-          _ControlIcon(
-            icon: Icons.lock_outline_rounded,
-            size: 22,
-            enabled: true,
-            onTap: onLock,
-          ),
           const Spacer(),
           _SpeedBadge(label: speedLabel, onTap: onSpeed),
           const SizedBox(width: 4),
@@ -1655,6 +1748,80 @@ class _PlayerControlBar extends StatelessWidget {
             onTap: onOrientation,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 速度刻度条上的一档：选中时主色加粗并在左侧显示指示三角。
+class _SpeedScaleItem extends StatelessWidget {
+  const _SpeedScaleItem({required this.label, required this.active});
+
+  final String label;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 22,
+      child: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 120),
+            curve: Curves.easeOut,
+            style: TextStyle(
+              fontSize: active ? 14.5 : 12.5,
+              fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+              color: active ? AppColors.primary : Colors.white60,
+            ),
+            child: Text(label),
+          ),
+          if (active)
+            const Positioned(
+              left: 0,
+              child: Icon(
+                Icons.play_arrow_rounded,
+                size: 11,
+                color: AppColors.primary,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 播放器左侧浮层的圆形小按钮。
+class _SideIconButton extends StatelessWidget {
+  const _SideIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.38),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+          ),
+          child: Icon(icon, size: 20, color: Colors.white),
+        ),
       ),
     );
   }
