@@ -205,7 +205,7 @@ class _QuickActions extends ConsumerWidget {
       _QuickActionData(
         icon: Icons.history_rounded,
         label: '最近播放',
-        onTap: () => ref.read(navTabProvider.notifier).select(2),
+        onTap: () => context.push('/recent'),
       ),
       _QuickActionData(
         icon: Icons.star_rounded,

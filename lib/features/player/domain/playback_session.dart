@@ -128,17 +128,31 @@ class PlaybackSession {
     duration.value = Duration.zero;
     status.value = PlaybackStatus.initializing;
     try {
-      final String? source = await resolveSource(item);
+      debugPrint(
+        '[ReelBox] resolve start id=${item.id} '
+        'type=${item.sourceType.name} locator=${item.sourceLocator}',
+      );
+      // 解析也要有上限：photo_manager 在云资源上可能长时间不返回。
+      final String? source = await resolveSource(
+        item,
+      ).timeout(const Duration(seconds: 10), onTimeout: () => null);
       if (source == null || source.isEmpty) {
         throw const PlaybackException('视频文件不存在或访问权限已失效');
       }
-      await engine.open(source, startAt: startAt, autoPlay: autoPlay);
+      debugPrint('[ReelBox] resolve done path=$source');
+      await engine
+          .open(source, startAt: startAt, autoPlay: autoPlay)
+          .timeout(const Duration(seconds: 25));
       await engine.setSpeed(speed.value);
       status.value = autoPlay ? PlaybackStatus.playing : PlaybackStatus.paused;
+    } on TimeoutException {
+      error.value = '加载超时，可能是文件过大或存储读取过慢，请重试';
+      status.value = PlaybackStatus.error;
     } on PlaybackException catch (exception) {
       error.value = exception.message;
       status.value = PlaybackStatus.error;
-    } on Object {
+    } on Object catch (exception) {
+      debugPrint('[ReelBox] open failed: $exception');
       error.value = '无法播放该视频，文件可能已损坏或格式不受支持';
       status.value = PlaybackStatus.error;
     } finally {
@@ -249,14 +263,28 @@ class PlaybackSession {
 
   Future<void> dispose() async {
     if (_disposed) return;
-    saveProgress();
-    _disposed = true;
+    // 先停定时器，避免销毁过程中再次写进度。
     _autoSaveTimer?.cancel();
+    try {
+      saveProgress();
+    } on Object catch (error) {
+      debugPrint('保存进度失败：$error');
+    }
+    _disposed = true;
     for (final StreamSubscription<dynamic> subscription in _subscriptions) {
-      await subscription.cancel();
+      try {
+        await subscription.cancel();
+      } on Object catch (error) {
+        debugPrint('取消订阅失败：$error');
+      }
     }
     _subscriptions.clear();
-    await engine.dispose();
+    // 无论前面的清理是否抛错，都必须释放播放引擎，否则 mpv 实例会一直存活。
+    try {
+      await engine.dispose();
+    } on Object catch (error) {
+      debugPrint('释放播放引擎失败：$error');
+    }
     position.dispose();
     duration.dispose();
     playing.dispose();

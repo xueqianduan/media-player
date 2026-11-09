@@ -178,7 +178,7 @@ class PlaybackSettingsPage extends ConsumerWidget {
               Divider(height: 1, indent: 16, color: context.dividerColor),
               _SwitchTile(
                 title: '断点续播提醒',
-                subtitle: '观看超过 15 秒后重新打开时询问是否继续',
+                subtitle: '观看超过 15 秒后重新打开时从上次位置继续，可一键重新开始',
                 value: settings.resumePrompt,
                 onChanged: controller.setResumePrompt,
               ),

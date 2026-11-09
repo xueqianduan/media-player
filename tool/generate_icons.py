@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import numpy as np
@@ -123,6 +124,122 @@ def square_up(crop: Image.Image, radius: float, out: int = 1024) -> Image.Image:
     return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGB")
 
 
+def _design(u: np.ndarray, v: np.ndarray, order: int) -> np.ndarray:
+    cols = [np.ones_like(u), u, v]
+    if order >= 2:
+        cols += [u * u, u * v, v * v]
+    if order >= 3:
+        cols += [u**3, u * u * v, u * v * v, v**3]
+    return np.stack(cols, axis=-1)
+
+
+def fit_gradient(arr: np.ndarray, ring: float = 0.08, order: int = 3) -> np.ndarray:
+    """用图标外圈（纯背景）拟合背景渐变的低阶多项式。"""
+    h, w = arr.shape[:2]
+    v = (np.mgrid[0:h, 0:w][0] / (h - 1)) * 2 - 1
+    u = (np.mgrid[0:h, 0:w][1] / (w - 1)) * 2 - 1
+    m = max(2, int(w * ring))
+    band = np.zeros((h, w), bool)
+    band[:m, :] = band[-m:, :] = True
+    band[:, :m] = band[:, -m:] = True
+    a = _design(u[band].astype(np.float64), v[band].astype(np.float64), order)
+    coef, *_ = np.linalg.lstsq(a, arr[band].astype(np.float64), rcond=None)
+    return coef
+
+
+def evaluate_gradient(coef: np.ndarray, u: np.ndarray, v: np.ndarray, order: int = 3) -> np.ndarray:
+    return _design(u, v, order) @ coef
+
+
+def adaptive_layers(
+    full: Image.Image, radius_ratio: float, out: int = 1024, inner_ratio: float = 0.72
+) -> tuple[Image.Image, Image.Image]:
+    """生成 Android 自适应图标的背景层与前景层。
+
+    前景把图标缩到 108dp 画布中央的安全区（72%），边缘羽化；背景先把外圈颜色
+    拟合成低阶渐变并向四周延拓，再用图标边缘的残差补齐，拼起来是一条连续过渡。
+    """
+    inner = int(round(out * inner_ratio))
+    off = (out - inner) // 2
+    icon = full.resize((inner, inner), Image.LANCZOS)
+    arr = np.asarray(icon).astype(np.float32)
+    last = inner - 1
+    rr = max(1.0, radius_ratio * inner)
+
+    yy, xx = np.mgrid[0:out, 0:out].astype(np.float32)
+    px, py = xx - off, yy - off
+    qx = np.clip(px, rr, last - rr)
+    qy = np.clip(py, rr, last - rr)
+    dx, dy = px - qx, py - qy
+    dist = np.hypot(dx, dy)
+    outside = dist > rr
+    scale = rr / np.maximum(dist, 1e-6)  # 正好取图标边缘上的颜色，保证接缝连续
+    fx = qx + dx * scale
+    fy = qy + dy * scale
+    x0 = np.clip(np.floor(fx).astype(int), 0, last)
+    y0 = np.clip(np.floor(fy).astype(int), 0, last)
+    x1 = np.clip(x0 + 1, 0, last)
+    y1 = np.clip(y0 + 1, 0, last)
+    wx = (fx - x0)[..., None]
+    wy = (fy - y0)[..., None]
+
+    def bilinear(src: np.ndarray) -> np.ndarray:
+        return (
+            src[y0, x0] * (1 - wx) * (1 - wy)
+            + src[y0, x1] * wx * (1 - wy)
+            + src[y1, x0] * (1 - wx) * wy
+            + src[y1, x1] * wx * wy
+        )
+
+    # 1) 拟合背景渐变的低阶多项式，用于把渐变势能继续往外推
+    poly = fit_gradient(arr, ring=0.08, order=3)
+    gu = np.clip(px / last * 2 - 1, -1.6, 1.6)
+    gv = np.clip(py / last * 2 - 1, -1.6, 1.6)
+    poly_canvas = evaluate_gradient(poly, gu, gv, order=3)
+
+    # 2) 边界残差用最近边界采样延拓，保证在图标边缘处完全连续
+    delta = np.zeros((out, out, 3), np.float32)
+    delta[off : off + inner, off : off + inner] = arr - poly_canvas[off : off + inner, off : off + inner]
+    delta_ext = bilinear(delta[off : off + inner, off : off + inner])
+
+    bg = np.zeros((out, out, 3), np.float32)
+    bg[off : off + inner, off : off + inner] = arr
+    bg[outside] = (poly_canvas + delta_ext)[outside]
+
+    bg_img = Image.fromarray(np.clip(bg, 0, 255).astype(np.uint8), "RGB")
+    # 只模糊图形“外面”的延拓区：羽化带放在边界之外，避免糊掉图形本身
+    blur_mask = Image.new("L", (out, out), 255)
+    ImageDraw.Draw(blur_mask).rounded_rectangle(
+        [off - 2, off - 2, off + inner + 1, off + inner + 1], radius=int(rr + 3), fill=0
+    )
+    blur_mask = blur_mask.filter(ImageFilter.GaussianBlur(2.0))
+    bg_img = Image.composite(bg_img.filter(ImageFilter.GaussianBlur(inner * 0.008)), bg_img, blur_mask)
+
+    # 跨接缝的一条窄带再做一次柔性过渡，抹掉可能残留的 1px 色阶
+    ring = Image.new("L", (out, out), 0)
+    ImageDraw.Draw(ring).rounded_rectangle(
+        [off - 6, off - 6, off + inner + 5, off + inner + 5], radius=int(rr + 6), fill=255
+    )
+    ImageDraw.Draw(ring).rounded_rectangle(
+        [off + 6, off + 6, off + inner - 7, off + inner - 7], radius=int(rr - 6), fill=0
+    )
+    ring = ring.filter(ImageFilter.GaussianBlur(4.0))
+    bg_img = Image.composite(bg_img.filter(ImageFilter.GaussianBlur(3.0)), bg_img, ring)
+
+    # 前景：羽化边缘的图标，和背景延拓区自然过渡
+    fg_canvas = Image.new("RGBA", (out, out), (0, 0, 0, 0))
+    ss = 4
+    mask = Image.new("L", (inner * ss, inner * ss), 0)
+    ImageDraw.Draw(mask).rounded_rectangle(
+        [0, 0, inner * ss - 1, inner * ss - 1], radius=int(rr * ss), fill=255
+    )
+    mask = mask.resize((inner, inner), Image.LANCZOS).filter(ImageFilter.GaussianBlur(inner * 0.02))
+    fg_icon = icon.convert("RGBA")
+    fg_icon.putalpha(mask)  # 直接写 alpha，避免 paste 时 RGB 与遮罩相乘导致边缘发暗
+    fg_canvas.paste(fg_icon, (off, off))
+    return bg_img, fg_canvas
+
+
 def rounded_alpha(full: Image.Image, radius_ratio: float, pad: float = 0.0) -> Image.Image:
     """满幅方图 -> 透明底的圆角图标（可选留白），用于 macOS / Windows。"""
     size = full.width
@@ -136,7 +253,9 @@ def rounded_alpha(full: Image.Image, radius_ratio: float, pad: float = 0.0) -> I
         [0, 0, inner * ss - 1, inner * ss - 1], radius=int(radius_ratio * inner * ss), fill=255
     )
     mask = mask.resize((inner, inner), Image.LANCZOS)
-    canvas.paste(icon, ((size - inner) // 2, (size - inner) // 2), mask)
+    rounded = icon.convert("RGBA")
+    rounded.putalpha(mask)
+    canvas.paste(rounded, ((size - inner) // 2, (size - inner) // 2))
     return canvas
 
 
@@ -159,7 +278,17 @@ def save(img: Image.Image, path: Path, size: int, opaque: bool = False) -> None:
         resized = resized.convert("RGB")
     else:
         resized = resized.convert("RGBA")
-    resized.save(path, optimize=True)
+    # Windows 上杀毒/索引偶尔会短暂占用目标文件，写入失败时重试
+    tmp = path.with_name(path.name + ".tmp")
+    for attempt in range(6):
+        try:
+            resized.save(tmp, format="PNG", optimize=True)
+            tmp.replace(path)
+            return
+        except OSError:
+            if attempt == 5:
+                raise
+            time.sleep(0.25)
 
 
 def main() -> None:
@@ -181,11 +310,11 @@ def main() -> None:
     for density, px in LAUNCHER_DP.items():
         save(legacy, ANDROID_RES / f"mipmap-{density}" / "ic_launcher.png", px)
         save(round_icon, ANDROID_RES / f"mipmap-{density}" / "ic_launcher_round.png", px)
-    # 自适应图标：背景层为满幅图，前景层留空（图形本身已满幅）
-    transparent = Image.new("RGBA", (432, 432), (0, 0, 0, 0))
+    # 自适应图标：前景为安全区内的图形，背景为向外延拓的同款渐变
+    ad_bg, ad_fg = adaptive_layers(full, radius_ratio)
     for density, px in ADAPTIVE_DP.items():
-        save(full, ANDROID_RES / f"mipmap-{density}" / "ic_launcher_background.png", px, opaque=True)
-        save(transparent, ANDROID_RES / f"mipmap-{density}" / "ic_launcher_foreground.png", px)
+        save(ad_bg, ANDROID_RES / f"mipmap-{density}" / "ic_launcher_background.png", px, opaque=True)
+        save(ad_fg, ANDROID_RES / f"mipmap-{density}" / "ic_launcher_foreground.png", px)
     print("Android -> mipmap-*/ic_launcher*.png + 自适应图层")
 
     # ---------------- iOS ----------------

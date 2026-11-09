@@ -39,6 +39,10 @@ class SettingsController extends Notifier<AppSettings> {
     _update(state.copyWith(sortOption: option));
   }
 
+  void markScreenshotTipShown() {
+    _update(state.copyWith(screenshotTipShown: true));
+  }
+
   void setLongPressSpeed(double speed) {
     _update(state.copyWith(longPressSpeed: speed));
   }

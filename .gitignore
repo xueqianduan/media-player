@@ -49,3 +49,9 @@ app.*.map.json
 
 # WorkBuddy workspace data
 .workbuddy/
+
+# Flutter 生成的插件注册文件（每次构建自动重建）
+android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+
+# Gradle 构建产物
+android/build/

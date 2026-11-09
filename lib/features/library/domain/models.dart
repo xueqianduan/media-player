@@ -431,6 +431,7 @@ class PlaybackProgress {
     required this.durationMs,
     required this.lastPlayedAt,
     this.completed = false,
+    this.speed = 0,
   });
 
   /// 达到总时长 95% 视为已看完。
@@ -444,6 +445,9 @@ class PlaybackProgress {
   final int durationMs;
   final DateTime lastPlayedAt;
   final bool completed;
+
+  /// 该视频上次使用的倍速；0 表示尚未记录（回落到全局默认倍速）。
+  final double speed;
 
   double get fraction {
     if (durationMs <= 0) return 0;
@@ -460,6 +464,7 @@ class PlaybackProgress {
     int? durationMs,
     DateTime? lastPlayedAt,
     bool? completed,
+    double? speed,
   }) {
     return PlaybackProgress(
       mediaId: mediaId,
@@ -467,6 +472,7 @@ class PlaybackProgress {
       durationMs: durationMs ?? this.durationMs,
       lastPlayedAt: lastPlayedAt ?? this.lastPlayedAt,
       completed: completed ?? this.completed,
+      speed: speed ?? this.speed,
     );
   }
 
@@ -476,6 +482,7 @@ class PlaybackProgress {
     'durationMs': durationMs,
     'lastPlayedAt': lastPlayedAt.toIso8601String(),
     'completed': completed,
+    'speed': speed,
   };
 
   static PlaybackProgress fromJson(Map<String, dynamic> json) {
@@ -485,6 +492,7 @@ class PlaybackProgress {
       durationMs: (json['durationMs'] as num?)?.toInt() ?? 0,
       lastPlayedAt: _parseTime(json['lastPlayedAt']) ?? DateTime.now(),
       completed: json['completed'] as bool? ?? false,
+      speed: (json['speed'] as num?)?.toDouble() ?? 0,
     );
   }
 }

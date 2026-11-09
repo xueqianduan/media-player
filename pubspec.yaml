@@ -32,6 +32,7 @@ dependencies:
   wakelock_plus: ^1.8.0
   screen_brightness: ^2.1.11
   volume_controller: ^3.7.1
+  gal: ^2.3.3
 
 dev_dependencies:
   flutter_test:

@@ -3,12 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../history/presentation/recent_page.dart';
 import '../../library/application/library_controller.dart';
 import '../../library/data/media_scanner.dart';
 import '../../library/domain/models.dart';
 import '../../library/presentation/local_page.dart';
 import '../../magnet/presentation/magnet_page.dart';
+import '../../network/presentation/network_page.dart';
 import '../../profile/presentation/profile_page.dart';
 import '../../settings/application/settings_controller.dart';
 
@@ -54,8 +54,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         index: index,
         children: const <Widget>[
           LocalPage(),
+          NetworkPage(),
           MagnetPage(),
-          RecentPage(),
           ProfilePage(),
         ],
       ),
@@ -80,16 +80,16 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   onTap: () => ref.read(navTabProvider.notifier).select(0),
                 ),
                 _NavItem(
-                  icon: Icons.link_rounded,
-                  activeIcon: Icons.link_rounded,
-                  label: '磁力',
+                  icon: Icons.language_outlined,
+                  activeIcon: Icons.language_rounded,
+                  label: '网络',
                   selected: index == 1,
                   onTap: () => ref.read(navTabProvider.notifier).select(1),
                 ),
                 _NavItem(
-                  icon: Icons.access_time_rounded,
-                  activeIcon: Icons.access_time_filled_rounded,
-                  label: '最近',
+                  icon: Icons.link_rounded,
+                  activeIcon: Icons.link_rounded,
+                  label: '磁力',
                   selected: index == 2,
                   onTap: () => ref.read(navTabProvider.notifier).select(2),
                 ),

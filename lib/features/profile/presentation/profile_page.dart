@@ -135,9 +135,9 @@ class ProfilePage extends ConsumerWidget {
                 Row(
                   children: <Widget>[
                     _GridAction(
-                      icon: Icons.access_time_rounded,
-                      label: '观看历史',
-                      onTap: () => context.push('/history'),
+                      icon: Icons.history_rounded,
+                      label: '最近播放',
+                      onTap: () => context.push('/recent'),
                     ),
                     _GridAction(
                       icon: Icons.perm_media_outlined,

@@ -21,8 +21,8 @@ enum AppThemeMode {
 /// 播放器画面尺寸。
 enum VideoScaleMode {
   original('原始比例'),
-  fit('适应屏幕'),
-  cover('填充'),
+  fit('常规'),
+  cover('铺满'),
   stretch('拉伸');
 
   const VideoScaleMode(this.label);
@@ -50,6 +50,7 @@ class AppSettings {
     this.playlistRepeatMode = RepeatMode.loopAll,
     this.longPressSpeed = 2.0,
     this.videoScaleMode = VideoScaleMode.fit,
+    this.screenshotTipShown = false,
   });
 
   /// 播放倍速：0.5x ~ 5.0x。
@@ -96,6 +97,9 @@ class AppSettings {
   /// 播放器画面尺寸。
   final VideoScaleMode videoScaleMode;
 
+  /// 是否已经提示过「截图会保存到相册」。
+  final bool screenshotTipShown;
+
   AppSettings copyWith({
     AppThemeMode? themeMode,
     double? defaultSpeed,
@@ -107,6 +111,7 @@ class AppSettings {
     RepeatMode? playlistRepeatMode,
     double? longPressSpeed,
     VideoScaleMode? videoScaleMode,
+    bool? screenshotTipShown,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -119,6 +124,7 @@ class AppSettings {
       playlistRepeatMode: playlistRepeatMode ?? this.playlistRepeatMode,
       longPressSpeed: longPressSpeed ?? this.longPressSpeed,
       videoScaleMode: videoScaleMode ?? this.videoScaleMode,
+      screenshotTipShown: screenshotTipShown ?? this.screenshotTipShown,
     );
   }
 
@@ -130,6 +136,10 @@ class AppSettings {
     'keepScreenOn': keepScreenOn,
     'sortOption': sortOption.name,
     'viewMode': viewMode.name,
+    'playlistRepeatMode': playlistRepeatMode.name,
+    'longPressSpeed': longPressSpeed,
+    'videoScaleMode': videoScaleMode.name,
+    'screenshotTipShown': screenshotTipShown,
   };
 
   static AppSettings fromJson(Map<String, dynamic> json) {
@@ -150,6 +160,7 @@ class AppSettings {
             ),
       longPressSpeed: (json['longPressSpeed'] as num?)?.toDouble() ?? 2.0,
       videoScaleMode: VideoScaleMode.parse(json['videoScaleMode'] as String?),
+      screenshotTipShown: json['screenshotTipShown'] as bool? ?? false,
     );
   }
 }

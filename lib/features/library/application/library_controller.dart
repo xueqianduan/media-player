@@ -196,6 +196,7 @@ class LibraryController extends Notifier<LibraryState> {
     required int positionMs,
     required int durationMs,
     required bool completed,
+    double? speed,
   }) {
     state = _repository.updateProgress(
       state,
@@ -203,6 +204,7 @@ class LibraryController extends Notifier<LibraryState> {
       positionMs: positionMs,
       durationMs: durationMs,
       forceCompleted: completed,
+      speed: speed,
     );
   }
 

@@ -11,7 +11,7 @@ import '../../library/presentation/video_actions.dart';
 import '../../library/presentation/widgets/media_selection.dart';
 import '../../library/presentation/widgets/media_tiles.dart';
 
-/// 最近：继续观看 / 最近播放 / 已看完。
+/// 最近播放：继续观看 + 按「今天 / 昨天 / 更早」分组的播放记录。
 class RecentPage extends ConsumerWidget {
   const RecentPage({super.key});
 
@@ -19,18 +19,35 @@ class RecentPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final LibraryState state = ref.watch(libraryControllerProvider);
     final List<MediaItem> continueItems = state.continueWatching;
-    final List<MediaItem> recentItems = state.recentlyPlayed
-        .where((MediaItem item) => !state.continueWatching.contains(item))
-        .where((MediaItem item) => state.progressOf(item.id)?.completed != true)
+    final List<MediaItem> played = state.recentlyPlayed
+        .where((MediaItem item) => !continueItems.contains(item))
         .toList();
-    final List<MediaItem> completed = state.completedItems;
+
+    final DateTime now = DateTime.now();
+    final DateTime startOfToday = DateTime(now.year, now.month, now.day);
+    final DateTime startOfYesterday = startOfToday.subtract(
+      const Duration(days: 1),
+    );
+    final List<MediaItem> today = <MediaItem>[];
+    final List<MediaItem> yesterday = <MediaItem>[];
+    final List<MediaItem> earlier = <MediaItem>[];
+    for (final MediaItem item in played) {
+      final DateTime at = state.progressOf(item.id)?.lastPlayedAt ?? now;
+      if (!at.isBefore(startOfToday)) {
+        today.add(item);
+      } else if (!at.isBefore(startOfYesterday)) {
+        yesterday.add(item);
+      } else {
+        earlier.add(item);
+      }
+    }
 
     return SafeArea(
       bottom: false,
       child: Column(
         children: <Widget>[
           PageHeader(
-            title: '最近',
+            title: '最近播放',
             actions: <Widget>[
               MediaPageActions(
                 onSearch: () => context.push('/search'),
@@ -42,7 +59,7 @@ class RecentPage extends ConsumerWidget {
             ],
           ),
           Expanded(
-            child: recentItems.isEmpty && continueItems.isEmpty
+            child: continueItems.isEmpty && played.isEmpty
                 ? const EmptyState(
                     icon: Icons.history_rounded,
                     title: '还没有观看记录',
@@ -52,11 +69,7 @@ class RecentPage extends ConsumerWidget {
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                     children: <Widget>[
                       if (continueItems.isNotEmpty) ...<Widget>[
-                        SectionHeader(
-                          title: '继续观看',
-                          actionLabel: '查看全部',
-                          onAction: () => context.push('/history'),
-                        ),
+                        const SectionHeader(title: '继续观看'),
                         ...continueItems
                             .take(3)
                             .map(
@@ -69,83 +82,48 @@ class RecentPage extends ConsumerWidget {
                                 ),
                               ),
                             ),
+                        const SizedBox(height: 4),
                       ],
-                      if (recentItems.isNotEmpty) ...<Widget>[
-                        SectionHeader(
-                          title: '最近播放',
-                          actionLabel: '查看全部',
-                          onAction: () => context.push('/history'),
-                        ),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(18),
-                          child: Column(
-                            children: <Widget>[
-                              for (
-                                int i = 0;
-                                i < recentItems.take(6).length;
-                                i++
-                              ) ...<Widget>[
-                                _RecentTile(
-                                  item: recentItems[i],
-                                  progress: state.progress[recentItems[i].id],
-                                  onTap: () =>
-                                      playSingleVideo(context, recentItems[i]),
-                                  onMore: () => showVideoActionSheet(
-                                    context,
-                                    ref,
-                                    recentItems[i],
-                                  ),
-                                ),
-                                if (i != recentItems.take(6).length - 1)
-                                  Divider(
-                                    height: 1,
-                                    indent: 128,
-                                    color: context.dividerColor,
-                                  ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
-                      if (completed.isNotEmpty) ...<Widget>[
-                        SectionHeader(title: '已看完'),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(18),
-                          child: Column(
-                            children: <Widget>[
-                              for (
-                                int i = 0;
-                                i < completed.take(3).length;
-                                i++
-                              ) ...<Widget>[
-                                _RecentTile(
-                                  item: completed[i],
-                                  progress: state.progress[completed[i].id],
-                                  onTap: () =>
-                                      playSingleVideo(context, completed[i]),
-                                  onMore: () => showVideoActionSheet(
-                                    context,
-                                    ref,
-                                    completed[i],
-                                  ),
-                                ),
-                                if (i != completed.take(3).length - 1)
-                                  Divider(
-                                    height: 1,
-                                    indent: 128,
-                                    color: context.dividerColor,
-                                  ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
+                      ..._buildGroup(context, ref, state, '今天', today),
+                      ..._buildGroup(context, ref, state, '昨天', yesterday),
+                      ..._buildGroup(context, ref, state, '更早', earlier),
                     ],
                   ),
           ),
         ],
       ),
     );
+  }
+
+  /// 一个时间段分组：标题 + 圆角卡片列表。
+  List<Widget> _buildGroup(
+    BuildContext context,
+    WidgetRef ref,
+    LibraryState state,
+    String title,
+    List<MediaItem> items,
+  ) {
+    if (items.isEmpty) return const <Widget>[];
+    return <Widget>[
+      SectionHeader(title: title),
+      ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Column(
+          children: <Widget>[
+            for (int i = 0; i < items.length; i++) ...<Widget>[
+              _RecentTile(
+                item: items[i],
+                progress: state.progress[items[i].id],
+                onTap: () => playSingleVideo(context, items[i]),
+                onMore: () => showVideoActionSheet(context, ref, items[i]),
+              ),
+              if (i != items.length - 1)
+                Divider(height: 1, indent: 128, color: context.dividerColor),
+            ],
+          ],
+        ),
+      ),
+    ];
   }
 }
 

@@ -538,6 +538,7 @@ class LibraryRepository {
     required int positionMs,
     required int durationMs,
     bool forceCompleted = false,
+    double? speed,
     DateTime? at,
   }) {
     final DateTime now = at ?? DateTime.now();
@@ -553,12 +554,15 @@ class LibraryRepository {
 
     final Map<String, PlaybackProgress> progress =
         Map<String, PlaybackProgress>.of(state.progress);
+    // 倍速与进度一起记住：没传就沿用该视频上次记录的值。
+    final double savedSpeed = speed ?? state.progress[mediaId]?.speed ?? 0;
     progress[mediaId] = PlaybackProgress(
       mediaId: mediaId,
       positionMs: position,
       durationMs: safeDuration,
       lastPlayedAt: now,
       completed: completed,
+      speed: savedSpeed,
     );
 
     final List<MediaItem> media = state.media.map((MediaItem item) {

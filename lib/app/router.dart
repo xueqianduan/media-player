@@ -5,7 +5,7 @@ import '../core/theme/app_theme.dart';
 import '../features/category/presentation/categories_page.dart';
 import '../features/category/presentation/category_detail_page.dart';
 import '../features/favorites/presentation/favorites_page.dart';
-import '../features/history/presentation/history_page.dart';
+import '../features/history/presentation/recent_page.dart';
 import '../features/library/presentation/all_videos_page.dart';
 import '../features/library/presentation/folder_page.dart';
 import '../features/library/presentation/search_page.dart';
@@ -48,7 +48,7 @@ GoRouter buildRouter({String initialLocation = '/'}) {
         builder: (BuildContext context, GoRouterState state) =>
             PlaylistDetailPage(playlistId: state.pathParameters['id']!),
       ),
-      GoRoute(path: '/history', builder: (_, _) => const HistoryPage()),
+      GoRoute(path: '/recent', builder: (_, _) => const RecentPage()),
       GoRoute(
         path: '/hidden-folders',
         builder: (_, _) => const HiddenFoldersPage(),
