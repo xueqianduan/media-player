@@ -151,11 +151,7 @@ class _SelectionActionState extends State<_SelectionAction> {
     setState(() => _pressed = value);
   }
 
-  /// 在「按下」时就执行，而不是等抬手。
-  ///
-  /// 部分 ROM 的系统手势区会把底部的抬手事件取消掉（只给一个 pointer cancel），
-  /// 表现就是「按下去有水波纹，但什么也没发生」。这里不等抬手，按下即响应；
-  /// 再用 500ms 去抖防止连点重复打开面板。
+  /// 触发动作。500ms 去抖，防止连点重复打开面板。
   void _fire() {
     final DateTime now = DateTime.now();
     if (_lastFired != null &&
@@ -176,12 +172,10 @@ class _SelectionActionState extends State<_SelectionAction> {
     return Expanded(
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTapDown: (TapDownDetails _) {
-          _setPressed(true);
-          _fire();
-        },
+        onTapDown: (TapDownDetails _) => _setPressed(true),
         onTapUp: (TapUpDetails _) => _setPressed(false),
         onTapCancel: () => _setPressed(false),
+        onTap: _fire,
         child: Padding(
           // 触摸热区约 56dp，手指不用点得很准。
           padding: const EdgeInsets.symmetric(vertical: 6),
