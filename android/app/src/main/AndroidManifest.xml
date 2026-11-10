@@ -5,6 +5,9 @@
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <!-- 网络模块：直播搜索、取流与网络视频直链播放。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
     <!-- 保存截图到相册：Android 10 及以上走 MediaStore，无需此权限。 -->
     <uses-permission

@@ -105,6 +105,9 @@ class LocalDatabase {
     data['progress'] ??= <dynamic>[];
     // 收藏夹（可多选），旧版本只有 media.isFavorite 布尔值。
     data['favoriteFolders'] ??= <dynamic>[];
+    // 网络模块（收藏直播间 / 双路组合 / 网络视频直链）。新增表无需升版本，
+    // 旧数据读取时自动补空对象即可。
+    data['network'] ??= <String, dynamic>{};
     data['settings'] ??= <String, dynamic>{};
     data['permission'] ??= 'unknown';
     return data;

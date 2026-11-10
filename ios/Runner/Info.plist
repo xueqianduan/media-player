@@ -24,6 +24,12 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- 直播与网络视频可能使用非 HTTPS 直链，播放器需要直接访问。 -->
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>ReelBox 需要访问相册中的视频，用于建立本地视频库并播放视频。视频只保存在本机，不会上传。</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

@@ -10,6 +10,10 @@ import '../features/library/presentation/all_videos_page.dart';
 import '../features/library/presentation/folder_page.dart';
 import '../features/library/presentation/search_page.dart';
 import '../features/library/presentation/video_actions.dart';
+import '../features/network/domain/live_models.dart';
+import '../features/network/presentation/live_player_page.dart';
+import '../features/network/presentation/live_search_page.dart';
+import '../features/network/presentation/network_video_page.dart';
 import '../features/player/presentation/player_page.dart';
 import '../features/playlist/presentation/playlist_detail_page.dart';
 import '../features/playlist/presentation/playlists_page.dart';
@@ -49,6 +53,28 @@ GoRouter buildRouter({String initialLocation = '/'}) {
             PlaylistDetailPage(playlistId: state.pathParameters['id']!),
       ),
       GoRoute(path: '/recent', builder: (_, _) => const RecentPage()),
+      GoRoute(
+        path: '/network/search',
+        builder: (BuildContext context, GoRouterState state) => LiveSearchPage(
+          target: (state.extra as LiveSourceSlot?) ?? LiveSourceSlot.picture,
+        ),
+      ),
+      GoRoute(
+        path: '/network/live',
+        builder: (BuildContext context, GoRouterState state) {
+          final LivePlayArgs? args = state.extra as LivePlayArgs?;
+          if (args == null) return const _MissingRouteArgs();
+          return LivePlayerPage(args: args);
+        },
+      ),
+      GoRoute(
+        path: '/network/video',
+        builder: (BuildContext context, GoRouterState state) {
+          final NetworkVideo? video = state.extra as NetworkVideo?;
+          if (video == null) return const _MissingRouteArgs();
+          return NetworkVideoPage(video: video);
+        },
+      ),
       GoRoute(
         path: '/hidden-folders',
         builder: (_, _) => const HiddenFoldersPage(),
@@ -137,6 +163,34 @@ class _MissingPlayerPage extends StatelessWidget {
               onPressed: () =>
                   context.canPop() ? context.pop() : context.go('/'),
               child: const Text('返回'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 深链或进程恢复后 extra 丢失时的兜底页。
+class _MissingRouteArgs extends StatelessWidget {
+  const _MissingRouteArgs();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: context.appBackground,
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              '播放参数已失效，请返回重新选择',
+              style: TextStyle(fontSize: 13, color: context.textSecondary),
+            ),
+            const SizedBox(height: 14),
+            TextButton(
+              onPressed: () => context.go('/'),
+              child: const Text('返回首页'),
             ),
           ],
         ),
