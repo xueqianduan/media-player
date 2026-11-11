@@ -1,3 +1,11 @@
+// -------------------------------------------------------------------------
+// 功能：我的页面
+//
+// 主要内容：
+// - 统计信息与快捷入口
+// - 设置分组与版本号
+// -------------------------------------------------------------------------
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -17,6 +25,7 @@ class ProfilePage extends ConsumerWidget {
   static const String version = '1.0.4';
 
   @override
+  // ===== 页面骨架 =====
   Widget build(BuildContext context, WidgetRef ref) {
     final LibraryState state = ref.watch(libraryControllerProvider);
 
@@ -213,6 +222,7 @@ class ProfilePage extends ConsumerWidget {
   }
 }
 
+// ===== 小组件 =====
 class _GridAction extends StatelessWidget {
   const _GridAction({
     required this.icon,

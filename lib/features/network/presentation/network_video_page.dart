@@ -1,3 +1,11 @@
+// -------------------------------------------------------------------------
+// 功能：网络视频播放页
+//
+// 主要内容：
+// - 播放直链视频（mp4/m3u8）
+// - 简单的播放控制与进度
+// -------------------------------------------------------------------------
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -38,6 +46,7 @@ class _NetworkVideoPageState extends State<NetworkVideoPage> {
   String? _error;
 
   @override
+  // ===== 生命周期与打开 =====
   void initState() {
     super.initState();
     _player = Player();
@@ -80,6 +89,7 @@ class _NetworkVideoPageState extends State<NetworkVideoPage> {
     super.dispose();
   }
 
+  // ===== 播放控制 =====
   Future<void> _togglePlay() async {
     if (_playing.value) {
       await _player.pause();
@@ -89,6 +99,7 @@ class _NetworkVideoPageState extends State<NetworkVideoPage> {
   }
 
   @override
+  // ===== 页面骨架 =====
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
@@ -195,6 +206,7 @@ class _NetworkVideoPageState extends State<NetworkVideoPage> {
     );
   }
 
+  // ===== 进度条 =====
   Widget _buildProgress(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),

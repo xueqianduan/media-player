@@ -1,3 +1,12 @@
+// -------------------------------------------------------------------------
+// 功能：媒体库状态控制器
+//
+// 主要内容：
+// - 对外暴露 LibraryState
+// - 转发仓储的写操作并触发持久化
+// - 扫描、导入、权限等动作的编排
+// -------------------------------------------------------------------------
+
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,6 +26,7 @@ class LibraryController extends Notifier<LibraryState> {
 
   // ------------------------------------------------------------ 扫描 / 导入
 
+  // ===== 扫描、权限与导入 =====
   Future<void> scan({bool silent = false}) async {
     if (state.isScanning) return;
     final scanner = ref.read(mediaScannerProvider);
@@ -97,6 +107,7 @@ class LibraryController extends Notifier<LibraryState> {
 
   // ------------------------------------------------------------ 视频
 
+  // ===== 收藏与收藏夹 =====
   void toggleFavorite(String mediaId) {
     state = _repository.toggleFavorite(state, mediaId);
   }
@@ -134,6 +145,7 @@ class LibraryController extends Notifier<LibraryState> {
     state = _repository.removeFromFavoriteFolders(state, mediaIds, folderIds);
   }
 
+  // ===== 单条编辑与移除 =====
   void rename(String mediaId, String name) {
     state = _repository.renameMedia(state, mediaId, name);
   }

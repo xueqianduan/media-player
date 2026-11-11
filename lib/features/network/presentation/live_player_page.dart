@@ -1,3 +1,12 @@
+// -------------------------------------------------------------------------
+// 功能：双路直播播放页
+//
+// 主要内容：
+// - 画面挂载与首帧占位
+// - 声音切换、暂停、同步调节
+// - 连接状态与错误提示
+// -------------------------------------------------------------------------
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -38,6 +47,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
   String? _voiceWarning;
 
   @override
+  // ===== 生命周期与启动 =====
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _start());
@@ -108,6 +118,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
     setState(() => _paused = _session?.paused.value ?? false);
   }
 
+  // ===== 播放控制：暂停 / 声音 / 同步 =====
   Future<void> _togglePause() async {
     final DualLiveSession? session = _session;
     if (session == null) return;
@@ -166,6 +177,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
   }
 
   @override
+  // ===== 页面骨架 =====
   Widget build(BuildContext context) {
     final bool landscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
@@ -368,6 +380,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
   }
 }
 
+// ===== 面板与小组件 =====
 /// 同步面板：分别让画面 / 声音额外延迟 0.5 秒，或重新从零校准。
 class _SyncSheet extends StatefulWidget {
   const _SyncSheet({required this.session, required this.onRestart});

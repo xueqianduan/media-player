@@ -1,3 +1,11 @@
+// -------------------------------------------------------------------------
+// 功能：分类详情页
+//
+// 主要内容：
+// - 展示某个分类下的视频
+// - 多选与批量操作
+// -------------------------------------------------------------------------
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';

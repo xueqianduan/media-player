@@ -1,3 +1,11 @@
+// -------------------------------------------------------------------------
+// 功能：分类管理页
+//
+// 主要内容：
+// - 分类列表与新建入口
+// - 重命名/删除菜单
+// -------------------------------------------------------------------------
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';

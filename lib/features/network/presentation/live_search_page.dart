@@ -1,3 +1,12 @@
+// -------------------------------------------------------------------------
+// 功能：直播搜索页
+//
+// 主要内容：
+// - 关键词搜索（防抖 + 竞态保护）
+// - 房间号/链接直连
+// - 结果卡片与来源选择面板
+// -------------------------------------------------------------------------
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -47,6 +56,7 @@ class _LiveSearchPageState extends ConsumerState<LiveSearchPage> {
   bool _directLoading = false;
 
   @override
+  // ===== 生命周期 =====
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -62,6 +72,7 @@ class _LiveSearchPageState extends ConsumerState<LiveSearchPage> {
     super.dispose();
   }
 
+  // ===== 输入与搜索：防抖 / 竞态保护 / 房间号直连 =====
   void _onChanged(String value) {
     final int? roomId = BiliLiveApi.parseRoomInput(value);
     setState(() {
@@ -139,6 +150,7 @@ class _LiveSearchPageState extends ConsumerState<LiveSearchPage> {
     Navigator.of(context).pop(LiveSearchResult(room: room, slot: slot));
   }
 
+  // ===== 结果选择面板 =====
   Future<void> _showRoomSheet(LiveRoom room) async {
     final NetworkController controller = ref.read(
       networkControllerProvider.notifier,
@@ -223,6 +235,7 @@ class _LiveSearchPageState extends ConsumerState<LiveSearchPage> {
   }
 
   @override
+  // ===== 页面骨架 =====
   Widget build(BuildContext context) {
     final NetworkState network = ref.watch(networkControllerProvider);
 
@@ -332,6 +345,7 @@ class _LiveSearchPageState extends ConsumerState<LiveSearchPage> {
     );
   }
 
+  // ===== 结果列表与空态 =====
   Widget _buildBody(BuildContext context, NetworkState network) {
     if (_loading) {
       return const Center(
@@ -425,6 +439,7 @@ class _LiveSearchPageState extends ConsumerState<LiveSearchPage> {
   }
 }
 
+// ===== 卡片组件 =====
 class _RoomCard extends StatelessWidget {
   const _RoomCard({
     required this.room,

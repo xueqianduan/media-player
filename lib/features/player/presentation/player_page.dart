@@ -1,3 +1,12 @@
+// -------------------------------------------------------------------------
+// 功能：播放器页面
+//
+// 主要内容：
+// - 播放状态与引擎装配
+// - 单击/双击/滑动/长按手势
+// - 控制层、倍速/更多/队列面板、错误兜底
+// -------------------------------------------------------------------------
+
 import 'dart:async';
 
 import 'package:flutter/material.dart' hide RepeatMode;
@@ -68,6 +77,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   Timer? _lockIconTimer;
 
   @override
+  // ===== 生命周期与初始化 =====
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
@@ -198,6 +208,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
 
   // ---------------------------------------------------------------- 双指缩放
 
+  // ===== 画面缩放、拖拽与截图 =====
   double _pointerDistance() {
     final List<Offset> points = _pointers.values.take(2).toList();
     if (points.length < 2) return 0;
@@ -343,6 +354,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     }
   }
 
+  // ===== 锁定、侧栏与系统交互 =====
   void _toggleLock() {
     final bool next = !_locked;
     _resumeTipTimer?.cancel();
@@ -461,6 +473,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     super.dispose();
   }
 
+  // ===== 控制层显隐与播放控制 =====
   void _scheduleHide() {
     _hideTimer?.cancel();
     if (_session.currentItem == null || _panel != null) return;
@@ -507,6 +520,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   /// 双击左右两侧的快进/快退区域占 25%，中间 50% 用于播放暂停。
   static const double _doubleTapSideZone = 0.25;
 
+  // ===== 手势：双击 / 横向 / 纵向 / 长按加速 =====
   Future<void> _onDoubleTap(TapDownDetails details) async {
     final double width = MediaQuery.sizeOf(context).width;
     final double x = details.localPosition.dx;
@@ -688,6 +702,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     _showHint('分享功能后续开放');
   }
 
+  // ===== 侧边面板：倍速 / 更多 / 队列 =====
   void _openPanel(_PlayerPanel panel) {
     _hideTimer?.cancel();
     setState(() {
@@ -1038,6 +1053,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   }
 
   @override
+  // ===== 页面骨架 =====
   Widget build(BuildContext context) {
     if (widget.args.mediaIds.isEmpty || _session.currentItem == null) {
       return Scaffold(
@@ -1685,6 +1701,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   }
 }
 
+// ===== 控制层与面板用到的小组件 =====
 /// 播放控制栏：上一集 / 播放暂停 / 下一集，右侧为倍速与横竖屏，全部小图标横向排列。
 class _PlayerControlBar extends StatelessWidget {
   const _PlayerControlBar({

@@ -1,3 +1,12 @@
+// -------------------------------------------------------------------------
+// 功能：视频卡片组件
+//
+// 主要内容：
+// - 缩略图与占位图
+// - 列表样式 MediaListTile、网格样式 MediaGridTile
+// - 多选勾选标记
+// -------------------------------------------------------------------------
+
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -9,6 +18,7 @@ import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/ui_kit.dart';
 import '../../domain/models.dart';
 
+// ===== 缩略图 =====
 /// 视频封面：磁盘缓存 + 懒加载 + 占位图。
 class MediaThumbnail extends ConsumerStatefulWidget {
   const MediaThumbnail({
@@ -162,6 +172,7 @@ class _Placeholder extends StatelessWidget {
   }
 }
 
+// ===== 列表样式 =====
 /// 列表模式的视频行。
 class MediaListTile extends StatelessWidget {
   const MediaListTile({
@@ -282,6 +293,7 @@ class MediaListTile extends StatelessWidget {
   }
 }
 
+// ===== 网格样式 =====
 /// 网格模式的视频卡片。
 class MediaGridTile extends StatelessWidget {
   const MediaGridTile({
@@ -378,6 +390,7 @@ class MediaGridTile extends StatelessWidget {
   }
 }
 
+// ===== 多选标记 =====
 class _SelectionMark extends StatelessWidget {
   const _SelectionMark({required this.selected, this.floating = false});
 

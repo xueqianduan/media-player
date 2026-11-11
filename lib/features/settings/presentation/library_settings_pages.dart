@@ -1,3 +1,11 @@
+// -------------------------------------------------------------------------
+// 功能：媒体库设置页
+//
+// 主要内容：
+// - 扫描范围与权限入口
+// - 存储占用与索引清理
+// -------------------------------------------------------------------------
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,6 +16,7 @@ import '../../library/application/library_controller.dart';
 import '../../library/domain/models.dart';
 import 'settings_pages.dart';
 
+// ===== 隐藏文件夹 =====
 /// 隐藏文件夹管理。
 class HiddenFoldersPage extends ConsumerWidget {
   const HiddenFoldersPage({super.key});
@@ -82,6 +91,7 @@ class HiddenFoldersPage extends ConsumerWidget {
   }
 }
 
+// ===== 扫描设置 =====
 /// 媒体扫描管理。
 class MediaScanPage extends ConsumerWidget {
   const MediaScanPage({super.key});
@@ -210,6 +220,7 @@ class MediaScanPage extends ConsumerWidget {
   }
 }
 
+// ===== 小组件 =====
 class _InfoLine extends StatelessWidget {
   const _InfoLine({required this.label, required this.value});
 

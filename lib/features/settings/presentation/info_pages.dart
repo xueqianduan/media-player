@@ -1,3 +1,12 @@
+// -------------------------------------------------------------------------
+// 功能：信息页集合
+//
+// 主要内容：
+// - 关于页
+// - 隐私与权限说明
+// - 帮助与反馈（FAQ 折叠列表）
+// -------------------------------------------------------------------------
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,6 +17,7 @@ import '../../library/domain/models.dart';
 import '../../profile/presentation/profile_page.dart';
 import 'settings_pages.dart';
 
+// ===== 关于 =====
 /// 关于 ReelBox。
 class AboutPage extends ConsumerWidget {
   const AboutPage({super.key});
@@ -123,6 +133,7 @@ class _AboutRow extends StatelessWidget {
   }
 }
 
+// ===== 隐私与权限 =====
 /// 隐私与权限说明。
 class PrivacyPage extends StatelessWidget {
   const PrivacyPage({super.key});
@@ -183,6 +194,7 @@ class PrivacyPage extends StatelessWidget {
   }
 }
 
+// ===== 帮助与反馈 =====
 /// 帮助与反馈。
 class HelpPage extends StatelessWidget {
   const HelpPage({super.key});

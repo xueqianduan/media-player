@@ -1,3 +1,12 @@
+// -------------------------------------------------------------------------
+// 功能：网络页
+//
+// 主要内容：
+// - 直播/视频两段切换
+// - 双路观赛来源卡与开始观看
+// - 收藏卡列表、添加链接弹窗
+// -------------------------------------------------------------------------
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -26,6 +35,7 @@ class _NetworkPageState extends ConsumerState<NetworkPage> {
   bool _managing = false;
 
   @override
+  // ===== 生命周期 =====
   void initState() {
     super.initState();
     // 双路选择默认取上次保存的组合。
@@ -41,6 +51,7 @@ class _NetworkPageState extends ConsumerState<NetworkPage> {
 
   bool get _isLive => _tab == 0;
 
+  // ===== 选择来源与开始观看 =====
   Future<void> _pickSource(LiveSourceSlot slot) async {
     final LiveSearchResult? result = await context.push<LiveSearchResult>(
       '/network/search',
@@ -81,6 +92,7 @@ class _NetworkPageState extends ConsumerState<NetworkPage> {
 
   // ------------------------------------------------------------------ 添加链接
 
+  // ===== 添加链接与收藏菜单 =====
   Future<void> _showAddLinkDialog() async {
     final bool isLive = _isLive;
     final String? input = await showDialog<String>(
@@ -196,6 +208,7 @@ class _NetworkPageState extends ConsumerState<NetworkPage> {
   // -------------------------------------------------------------------- build
 
   @override
+  // ===== 页面骨架 =====
   Widget build(BuildContext context) {
     final NetworkState network = ref.watch(networkControllerProvider);
 
@@ -244,6 +257,7 @@ class _NetworkPageState extends ConsumerState<NetworkPage> {
     );
   }
 
+  // ===== 顶部区域：搜索框与分段切换 =====
   Widget _buildSearchBox(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -359,6 +373,7 @@ class _NetworkPageState extends ConsumerState<NetworkPage> {
 
   // ------------------------------------------------------------------ 直播 tab
 
+  // ===== 直播 tab =====
   List<Widget> _buildLiveTab(BuildContext context, NetworkState network) {
     return <Widget>[
       _buildDualCard(context),
@@ -639,6 +654,7 @@ class _NetworkPageState extends ConsumerState<NetworkPage> {
 
   // ------------------------------------------------------------------ 视频 tab
 
+  // ===== 视频 tab =====
   List<Widget> _buildVideoTab(BuildContext context, NetworkState network) {
     return <Widget>[
       SectionHeader(
@@ -750,6 +766,7 @@ class _NetworkPageState extends ConsumerState<NetworkPage> {
   }
 }
 
+// ===== 对话框与卡片组件 =====
 /// 添加直播链接 / 视频直链的输入弹窗。
 class _AddLinkDialog extends StatefulWidget {
   const _AddLinkDialog({required this.isLive});

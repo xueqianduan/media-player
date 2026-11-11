@@ -1,3 +1,12 @@
+// -------------------------------------------------------------------------
+// 功能：首页（本地）
+//
+// 主要内容：
+// - 权限引导与扫描进度横幅
+// - 快捷操作区（导入、全部视频、分类等）
+// - 系统文件夹列表
+// -------------------------------------------------------------------------
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -17,6 +26,7 @@ class LocalPage extends ConsumerWidget {
   const LocalPage({super.key});
 
   @override
+  // ===== 首页骨架 =====
   Widget build(BuildContext context, WidgetRef ref) {
     final LibraryState state = ref.watch(libraryControllerProvider);
     final SettingsController settings = ref.read(
@@ -127,6 +137,7 @@ class LocalPage extends ConsumerWidget {
     );
   }
 
+  // ===== 数据计算与动作 =====
   String? _latestDate(LibraryState state, String folderId) {
     DateTime? latest;
     for (final MediaItem item in state.mediaInFolder(folderId)) {
@@ -189,6 +200,7 @@ class LocalPage extends ConsumerWidget {
   }
 }
 
+// ===== 快捷操作 =====
 class _QuickActions extends ConsumerWidget {
   const _QuickActions({required this.state});
 
@@ -272,6 +284,7 @@ class _QuickActionData {
   final VoidCallback onTap;
 }
 
+// ===== 文件夹与状态横幅 =====
 class _FolderTile extends StatelessWidget {
   const _FolderTile({
     required this.folder,

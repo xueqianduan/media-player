@@ -1,3 +1,11 @@
+// -------------------------------------------------------------------------
+// 功能：全部视频页
+//
+// 主要内容：
+// - 列表/网格展示 + 排序
+// - 多选与批量操作入口
+// -------------------------------------------------------------------------
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';

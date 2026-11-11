@@ -1,3 +1,12 @@
+// -------------------------------------------------------------------------
+// 功能：媒体库仓储（写操作）
+//
+// 主要内容：
+// - 扫描结果合并、增删改分类/播放列表
+// - 收藏与收藏夹维护
+// - 进度更新与清理，全部返回新 LibraryState
+// -------------------------------------------------------------------------
+
 import 'dart:async';
 
 import 'package:uuid/uuid.dart';
@@ -20,6 +29,7 @@ class LibraryRepository {
 
   // ---------------------------------------------------------------- 读取
 
+  // ===== 读取与扫描 =====
   LibraryState load() {
     final List<MediaItem> media = database
         .readList('media')
@@ -239,6 +249,7 @@ class LibraryRepository {
 
   // ---------------------------------------------------------------- 视频
 
+  // ===== 收藏与收藏夹 =====
   LibraryState toggleFavorite(LibraryState state, String mediaId) {
     final MediaItem? item = state.itemById(mediaId);
     if (item == null) return state;
@@ -431,6 +442,7 @@ class LibraryRepository {
     return next;
   }
 
+  // ===== 单条编辑与移除 =====
   LibraryState renameMedia(LibraryState state, String mediaId, String name) {
     final String trimmed = name.trim();
     if (trimmed.isEmpty) return state;
@@ -493,6 +505,7 @@ class LibraryRepository {
     return next;
   }
 
+  // ===== 文件夹、权限与扫描状态 =====
   LibraryState setFolderHidden(
     LibraryState state,
     String folderId,
@@ -532,6 +545,7 @@ class LibraryRepository {
 
   // ---------------------------------------------------------------- 分类
 
+  // ===== 分类 =====
   LibraryState createCategory(LibraryState state, String name) {
     final String trimmed = name.trim();
     if (trimmed.isEmpty) return state;
@@ -615,6 +629,7 @@ class LibraryRepository {
 
   // ---------------------------------------------------------------- 播放列表
 
+  // ===== 播放列表 =====
   LibraryState createPlaylist(LibraryState state, String name) {
     final String trimmed = name.trim();
     if (trimmed.isEmpty) return state;

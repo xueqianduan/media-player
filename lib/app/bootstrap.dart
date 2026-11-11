@@ -1,3 +1,11 @@
+// -------------------------------------------------------------------------
+// 功能：启动初始化流程
+//
+// 主要内容：
+// - 初始化 media_kit、数据库等一次性依赖
+// - 统一捕获启动期异常
+// -------------------------------------------------------------------------
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

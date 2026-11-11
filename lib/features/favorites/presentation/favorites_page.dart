@@ -1,3 +1,12 @@
+// -------------------------------------------------------------------------
+// 功能：收藏页
+//
+// 主要内容：
+// - 收藏夹筛选胶囊
+// - 按收藏夹展示视频
+// - 多选与批量操作
+// -------------------------------------------------------------------------
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';

@@ -1,3 +1,11 @@
+// -------------------------------------------------------------------------
+// 功能：播放列表管理页
+//
+// 主要内容：
+// - 播放列表列表与新建入口
+// - 重命名/删除菜单
+// -------------------------------------------------------------------------
+
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';

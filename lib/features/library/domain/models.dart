@@ -3,6 +3,7 @@
 /// 这些类型不依赖任何 Flutter 插件，便于单元测试与后续替换数据源。
 library;
 
+// ===== 枚举：来源 / 排序 / 视图 / 循环 / 权限 =====
 /// 视频来源：系统相册资源 / 应用内导入副本。
 enum MediaSourceType {
   photoAsset,
@@ -92,6 +93,7 @@ enum MediaPermission {
       this == MediaPermission.granted || this == MediaPermission.limited;
 }
 
+// ===== 媒体与文件夹 =====
 /// 一条视频媒体记录（媒体文件本身不入库）。
 class MediaItem {
   const MediaItem({
@@ -299,6 +301,7 @@ class SourceFolder {
   }
 }
 
+// ===== 分类 / 播放列表 / 收藏夹 =====
 /// 自定义分类（应用内虚拟文件夹，不改变真实存储位置）。
 class Category {
   const Category({
@@ -423,6 +426,7 @@ class Playlist {
   }
 }
 
+// ===== 播放进度 =====
 /// 播放进度记录。
 class PlaybackProgress {
   const PlaybackProgress({
@@ -545,6 +549,7 @@ class FavoriteFolder {
   }
 }
 
+// ===== 聚合状态 =====
 /// 视频库快照。UI 只读取该快照，所有写操作走 Repository。
 class LibraryState {
   const LibraryState({

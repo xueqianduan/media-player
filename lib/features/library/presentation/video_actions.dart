@@ -1,3 +1,12 @@
+// -------------------------------------------------------------------------
+// 功能：视频操作集合（业务动作）
+//
+// 主要内容：
+// - 打开播放器 openPlayer
+// - 收藏夹 / 分类 / 播放列表面板
+// - 单条与批量操作菜单（重命名、删除、分享）
+// -------------------------------------------------------------------------
+
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +19,7 @@ import '../application/library_controller.dart';
 import '../domain/models.dart';
 import 'widgets/media_collection_view.dart';
 
+// ===== 公共：底部面板统一入口 =====
 /// 打开底部面板的统一入口。
 ///
 /// 真机上出现过「点了没反应」的反馈，这里兜一层：万一路由/构建抛异常，
@@ -35,6 +45,7 @@ Future<T?> _openSheet<T>(
   }
 }
 
+// ===== 播放入口 =====
 /// 打开播放器（支持队列与起始位置）。
 void openPlayer(
   BuildContext context, {
@@ -75,6 +86,7 @@ class PlayerArgs {
   final RepeatMode repeatMode;
 }
 
+// ===== 排序面板 =====
 /// 排序选择。
 Future<SortOption?> showSortSheet(BuildContext context, SortOption current) {
   return showModalBottomSheet<SortOption>(
@@ -113,6 +125,7 @@ Future<SortOption?> showSortSheet(BuildContext context, SortOption current) {
   );
 }
 
+// ===== 单条 / 批量操作菜单 =====
 /// 视频操作菜单。
 Future<void> showVideoActionSheet(
   BuildContext context,
@@ -358,6 +371,7 @@ Future<void> showBatchActionSheet(
   );
 }
 
+// ===== 分类 / 播放列表选择器 =====
 Future<void> showCategoryPicker(
   BuildContext context,
   WidgetRef ref, {
@@ -622,6 +636,7 @@ Future<void> showPlaylistPicker(
   );
 }
 
+// ===== 收藏夹面板 =====
 /// 收藏夹选择面板：占屏幕约 40%，顶部可新建收藏夹。
 Future<void> showFavoriteSheet(
   BuildContext context,

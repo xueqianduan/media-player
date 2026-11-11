@@ -1,3 +1,11 @@
+// -------------------------------------------------------------------------
+// 功能：最近播放页
+//
+// 主要内容：
+// - 继续观看卡片
+// - 最近播放列表与清空入口
+// -------------------------------------------------------------------------
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -16,6 +24,7 @@ class RecentPage extends ConsumerWidget {
   const RecentPage({super.key});
 
   @override
+  // ===== 页面骨架 =====
   Widget build(BuildContext context, WidgetRef ref) {
     final LibraryState state = ref.watch(libraryControllerProvider);
     final List<MediaItem> continueItems = state.continueWatching;
@@ -116,6 +125,7 @@ class RecentPage extends ConsumerWidget {
     );
   }
 
+  // ===== 分组渲染 =====
   /// 一个时间段分组：标题 + 圆角卡片列表。
   List<Widget> _buildGroup(
     BuildContext context,
@@ -148,6 +158,7 @@ class RecentPage extends ConsumerWidget {
   }
 }
 
+// ===== 卡片组件 =====
 class _ContinueWatchingCard extends StatelessWidget {
   const _ContinueWatchingCard({
     required this.item,

@@ -1,3 +1,11 @@
+// -------------------------------------------------------------------------
+// 功能：视频搜索页
+//
+// 主要内容：
+// - 按标题实时过滤本地视频
+// - 结果列表与空态
+// -------------------------------------------------------------------------
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';

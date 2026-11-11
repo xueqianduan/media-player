@@ -1,3 +1,12 @@
+// -------------------------------------------------------------------------
+// 功能：应用根组件
+//
+// 主要内容：
+// - 主题与 light/dark 切换
+// - 路由挂载（go_router）
+// - 中文本地化三件套 + 全局字号缩放
+// -------------------------------------------------------------------------
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

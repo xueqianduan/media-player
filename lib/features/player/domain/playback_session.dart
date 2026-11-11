@@ -1,3 +1,12 @@
+// -------------------------------------------------------------------------
+// 功能：播放会话
+//
+// 主要内容：
+// - 进度定时保存与关键时机保存
+// - 95% 完成判定
+// - 续播阈值与播放结束回调
+// -------------------------------------------------------------------------
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -106,6 +115,7 @@ class PlaybackSession {
     }
   }
 
+  // ===== 启动与打开 =====
   Future<void> start({Duration? startAt}) async {
     await _openCurrent(startAt: startAt ?? Duration.zero);
   }
@@ -181,6 +191,7 @@ class PlaybackSession {
     await _openCurrent(startAt: Duration.zero);
   }
 
+  // ===== 播放控制 =====
   Future<void> togglePlay() async {
     if (status.value == PlaybackStatus.error) {
       await _openCurrent(startAt: position.value);

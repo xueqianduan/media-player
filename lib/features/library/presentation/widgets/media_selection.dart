@@ -1,3 +1,12 @@
+// -------------------------------------------------------------------------
+// 功能：多选能力
+//
+// 主要内容：
+// - MediaSelectionState 多选状态 mixin
+// - 底部多选操作条 SelectionActionBar
+// - 页面级批量动作入口 MediaPageActions
+// -------------------------------------------------------------------------
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,6 +14,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../domain/models.dart';
 import '../video_actions.dart';
 
+// ===== 多选状态 mixin =====
 /// 视频列表页的多选状态管理。
 mixin MediaSelectionState<T extends ConsumerStatefulWidget>
     on ConsumerState<T> {
@@ -54,6 +64,7 @@ mixin MediaSelectionState<T extends ConsumerStatefulWidget>
   }
 }
 
+// ===== 多选操作条 =====
 /// 多选操作条。
 class SelectionActionBar extends StatelessWidget {
   const SelectionActionBar({
@@ -207,6 +218,7 @@ class _SelectionActionState extends State<_SelectionAction> {
   }
 }
 
+// ===== 页面动作按钮 =====
 /// 顶部筛选/排序按钮组，供各页面复用。
 class MediaPageActions extends ConsumerWidget {
   const MediaPageActions({

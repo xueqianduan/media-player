@@ -1,3 +1,11 @@
+// -------------------------------------------------------------------------
+// 功能：设置页集合
+//
+// 主要内容：
+// - 播放设置（手势、倍速、续播等）
+// - 外观设置（主题、视图、排序）
+// -------------------------------------------------------------------------
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -12,6 +20,7 @@ import '../../library/domain/models.dart';
 import '../application/settings_controller.dart';
 import '../domain/app_settings.dart';
 
+// ===== 设置页统一骨架 =====
 /// 设置页通用骨架。
 class SettingsScaffold extends StatelessWidget {
   const SettingsScaffold({
@@ -55,6 +64,7 @@ class SettingsScaffold extends StatelessWidget {
   }
 }
 
+// ===== 播放设置 =====
 /// 播放设置。
 class PlaybackSettingsPage extends ConsumerWidget {
   const PlaybackSettingsPage({super.key});
@@ -227,6 +237,7 @@ class PlaybackSettingsPage extends ConsumerWidget {
   }
 }
 
+// ===== 外观设置 =====
 /// 外观与主题。
 class AppearancePage extends ConsumerWidget {
   const AppearancePage({super.key});
@@ -321,6 +332,7 @@ class AppearancePage extends ConsumerWidget {
   }
 }
 
+// ===== 存储管理 =====
 /// 存储管理。
 class StoragePage extends ConsumerStatefulWidget {
   const StoragePage({super.key});
@@ -458,6 +470,7 @@ class _StoragePageState extends ConsumerState<StoragePage> {
   }
 }
 
+// ===== 设置项小组件 =====
 class _SwitchTile extends StatelessWidget {
   const _SwitchTile({
     required this.title,

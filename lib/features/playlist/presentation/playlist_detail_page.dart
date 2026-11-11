@@ -1,3 +1,11 @@
+// -------------------------------------------------------------------------
+// 功能：播放列表详情页
+//
+// 主要内容：
+// - 列表内视频展示与播放
+// - 移除/排序等操作
+// -------------------------------------------------------------------------
+
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -20,6 +28,7 @@ class PlaylistDetailPage extends ConsumerWidget {
   final String playlistId;
 
   @override
+  // ===== 页面骨架 =====
   Widget build(BuildContext context, WidgetRef ref) {
     final LibraryState state = ref.watch(libraryControllerProvider);
     final settings = ref.watch(settingsControllerProvider);
@@ -231,6 +240,7 @@ class PlaylistDetailPage extends ConsumerWidget {
     );
   }
 
+  // ===== 播放模式与条目操作面板 =====
   Future<void> _showModeSheet(
     BuildContext context,
     WidgetRef ref,

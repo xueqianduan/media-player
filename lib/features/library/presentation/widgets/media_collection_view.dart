@@ -1,3 +1,12 @@
+// -------------------------------------------------------------------------
+// 功能：视频集合容器
+//
+// 主要内容：
+// - 根据视图模式渲染列表或网格
+// - 多选状态下的点击/长按分发
+// - 多选页头 SelectionHeader
+// -------------------------------------------------------------------------
+
 import 'package:flutter/material.dart';
 
 import 'media_tiles.dart';
@@ -7,6 +16,7 @@ import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/ui_kit.dart';
 import '../../domain/models.dart';
 
+// ===== 列表 / 网格容器 =====
 /// 视频列表：列表 / 网格两种模式，支持多选状态渲染。
 class MediaCollectionView extends StatelessWidget {
   const MediaCollectionView({
@@ -95,6 +105,7 @@ class MediaCollectionView extends StatelessWidget {
   }
 }
 
+// ===== 多选页头 =====
 /// 多选状态下的顶部栏。
 class SelectionHeader extends StatelessWidget {
   const SelectionHeader({
