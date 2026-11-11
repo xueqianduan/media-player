@@ -9,7 +9,7 @@
 
 import 'package:flutter/material.dart';
 
-/// ReelBox 设计令牌。
+/// LumiPlayer 设计令牌。
 ///
 /// 浅色主题：白底 + 浅灰卡片 + 蓝紫强调色；
 /// 深色主题：深色底 + 深灰卡片 + 同一强调色。

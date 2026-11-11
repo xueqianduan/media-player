@@ -345,11 +345,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       }
       await Gal.putImageBytes(
         bytes,
-        name: 'ReelBox_${DateTime.now().millisecondsSinceEpoch}',
+        name: 'LumiPlayer_${DateTime.now().millisecondsSinceEpoch}',
       );
       if (mounted) _showHint('截图已保存到相册');
     } on Object catch (error) {
-      debugPrint('[ReelBox] save screenshot failed: $error');
+      debugPrint('[LumiPlayer] save screenshot failed: $error');
       if (mounted) _showHint('保存失败，请检查相册权限');
     }
   }

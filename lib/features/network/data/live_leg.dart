@@ -63,7 +63,7 @@ class LiveLeg {
     try {
       await _native?.setProperty(key, value);
     } on Object catch (error) {
-      debugPrint('[ReelBox] live setProperty $key failed: $error');
+      debugPrint('[LumiPlayer] live setProperty $key failed: $error');
     }
   }
 
@@ -120,12 +120,12 @@ class LiveLeg {
     try {
       await _errors.cancel();
     } on Object catch (error) {
-      debugPrint('[ReelBox] live cancel error stream failed: $error');
+      debugPrint('[LumiPlayer] live cancel error stream failed: $error');
     }
     try {
       await player.dispose();
     } on Object catch (error) {
-      debugPrint('[ReelBox] live dispose player failed: $error');
+      debugPrint('[LumiPlayer] live dispose player failed: $error');
     }
   }
 }

@@ -443,7 +443,7 @@ class _StoragePageState extends ConsumerState<StoragePage> {
                   final bool confirmed = await showConfirmDialog(
                     context,
                     title: '清空视频库索引',
-                    message: '只删除 ReelBox 中的应用内记录与分类关联，不会删除手机中的原始视频文件。',
+                    message: '只删除 LumiPlayer 中的应用内记录与分类关联，不会删除手机中的原始视频文件。',
                     confirmLabel: '清空',
                     danger: true,
                   );
@@ -458,7 +458,7 @@ class _StoragePageState extends ConsumerState<StoragePage> {
         ),
         const SizedBox(height: 12),
         Text(
-          'ReelBox 不会复制系统相册中的视频，只有通过「导入视频」添加的文件会复制到应用私有目录。',
+          'LumiPlayer 不会复制系统相册中的视频，只有通过「导入视频」添加的文件会复制到应用私有目录。',
           style: TextStyle(
             fontSize: 11,
             height: 1.6,

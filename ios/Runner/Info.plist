@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>ReelBox</string>
+	<string>LumiPlayer</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>ReelBox</string>
+	<string>LumiPlayer</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -31,9 +31,9 @@
 		<true/>
 	</dict>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>ReelBox 需要访问相册中的视频，用于建立本地视频库并播放视频。视频只保存在本机，不会上传。</string>
+	<string>LumiPlayer 需要访问相册中的视频，用于建立本地视频库并播放视频。视频只保存在本机，不会上传。</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>ReelBox 不会修改相册内容，仅在系统要求时声明最基础的相册访问能力。</string>
+	<string>LumiPlayer 不会修改相册内容，仅在系统要求时声明最基础的相册访问能力。</string>
 	<key>PHPhotoLibraryPreventAutomaticLimitedAccessAlert</key>
 	<true/>
 	<key>LSRequiresIPhoneOS</key>

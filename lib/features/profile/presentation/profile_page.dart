@@ -69,7 +69,7 @@ class ProfilePage extends ConsumerWidget {
                       Row(
                         children: <Widget>[
                           Text(
-                            'ReelBox',
+                            'LumiPlayer',
                             style: TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w700,
@@ -194,7 +194,7 @@ class ProfilePage extends ConsumerWidget {
             children: <Widget>[
               _SettingsTile(
                 icon: Icons.info_outline_rounded,
-                label: '关于 ReelBox',
+                label: '关于 LumiPlayer',
                 onTap: () => context.push('/about'),
               ),
               _SettingsTile(
@@ -212,7 +212,7 @@ class ProfilePage extends ConsumerWidget {
           const SizedBox(height: 16),
           Center(
             child: Text(
-              'ReelBox $version · 视频只保存在本地',
+              'LumiPlayer $version · 视频只保存在本地',
               style: TextStyle(fontSize: 10.5, color: context.textSecondary),
             ),
           ),

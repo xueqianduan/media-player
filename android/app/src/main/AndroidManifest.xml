@@ -2,6 +2,9 @@
     <!-- 视频读取权限：Android 13+ 使用 READ_MEDIA_VIDEO，旧版本使用 READ_EXTERNAL_STORAGE。
          不申请 MANAGE_EXTERNAL_STORAGE 等广泛文件访问权限。 -->
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <!-- 传输模块：按类型读取图片与音频（Android 13+ 分开授权）。 -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
@@ -15,7 +18,7 @@
         android:maxSdkVersion="29" />
 
     <application
-        android:label="ReelBox"
+        android:label="LumiPlayer"
         android:name="${applicationName}"
         android:requestLegacyExternalStorage="true"
         android:icon="@mipmap/ic_launcher"

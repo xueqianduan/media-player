@@ -33,7 +33,7 @@ class RecentPage extends ConsumerWidget {
         .toList();
 
     debugPrint(
-      '[ReelBox] recent page media=${state.media.length} '
+      '[LumiPlayer] recent page media=${state.media.length} '
       'progress=${state.progress.length} '
       'continue=${continueItems.length} played=${played.length}',
     );

@@ -58,7 +58,7 @@ Future<void> bootstrap() async {
         initialLibraryStateProvider.overrideWithValue(initialState),
         initialSettingsProvider.overrideWithValue(initialSettings),
       ],
-      child: const ReelBoxApp(),
+      child: const LumiPlayerApp(),
     ),
   );
 }

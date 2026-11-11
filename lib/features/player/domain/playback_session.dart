@@ -147,7 +147,7 @@ class PlaybackSession {
     status.value = PlaybackStatus.initializing;
     try {
       debugPrint(
-        '[ReelBox] resolve start id=${item.id} '
+        '[LumiPlayer] resolve start id=${item.id} '
         'type=${item.sourceType.name} locator=${item.sourceLocator}',
       );
       // 解析也要有上限：photo_manager 在云资源上可能长时间不返回。
@@ -156,7 +156,7 @@ class PlaybackSession {
       if (source == null || source.isEmpty) {
         throw const PlaybackException('视频文件不存在或访问权限已失效');
       }
-      debugPrint('[ReelBox] resolve done path=$source');
+      debugPrint('[LumiPlayer] resolve done path=$source');
       await engine
           .open(source, startAt: startAt, autoPlay: autoPlay)
           .timeout(const Duration(seconds: 25));
@@ -169,7 +169,7 @@ class PlaybackSession {
       error.value = exception.message;
       status.value = PlaybackStatus.error;
     } on Object catch (exception) {
-      debugPrint('[ReelBox] open failed: $exception');
+      debugPrint('[LumiPlayer] open failed: $exception');
       error.value = '无法播放该视频，文件可能已损坏或格式不受支持';
       status.value = PlaybackStatus.error;
     } finally {

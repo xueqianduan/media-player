@@ -8,13 +8,13 @@
 // -------------------------------------------------------------------------
 
 import 'package:flutter/material.dart' hide RepeatMode;
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/dialogs.dart';
 import '../../../core/widgets/ui_kit.dart';
+import '../../transfer/presentation/transfer_entry.dart';
 import '../application/library_controller.dart';
 import '../domain/models.dart';
 import 'widgets/media_collection_view.dart';
@@ -37,7 +37,7 @@ Future<T?> _openSheet<T>(
       builder: builder,
     );
   } on Object catch (error, stack) {
-    debugPrint('[ReelBox] open sheet failed: $error\n$stack');
+    debugPrint('[LumiPlayer] open sheet failed: $error\n$stack');
     if (context.mounted) {
       showToast(context, '面板打开失败，请重试');
     }
@@ -188,7 +188,7 @@ Future<void> showVideoActionSheet(
                 final String? name = await showTextInputDialog(
                   context,
                   title: '重命名',
-                  description: '只修改 ReelBox 中显示的名称，不会重命名手机里的文件。',
+                  description: '只修改 LumiPlayer 中显示的名称，不会重命名手机里的文件。',
                   initialValue: item.displayName,
                   hintText: '输入新的显示名称',
                 );
@@ -219,25 +219,21 @@ Future<void> showVideoActionSheet(
             SheetActionTile(
               icon: Icons.share_outlined,
               label: '分享视频',
-              onTap: () async {
+              onTap: () {
                 Navigator.of(sheetContext).pop();
-                await Clipboard.setData(
-                  ClipboardData(text: item.sourceLocator),
-                );
-                if (!context.mounted) return;
-                showToast(context, '视频路径已复制到剪贴板');
+                openTransferShare(context, <MediaItem>[item]);
               },
             ),
             Divider(height: 1, color: sheetContext.dividerColor),
             SheetActionTile(
               icon: Icons.playlist_remove_rounded,
-              label: '从 ReelBox 移除',
+              label: '从 LumiPlayer 移除',
               danger: true,
               onTap: () async {
                 Navigator.of(sheetContext).pop();
                 final bool confirmed = await showConfirmDialog(
                   context,
-                  title: '从 ReelBox 移除',
+                  title: '从 LumiPlayer 移除',
                   message: '只会删除应用内的记录与播放进度，不会删除手机中的原始视频文件。',
                   confirmLabel: '移除',
                   danger: true,
@@ -245,7 +241,7 @@ Future<void> showVideoActionSheet(
                 if (!confirmed) return;
                 controller.removeFromLibrary(<String>{item.id});
                 if (!context.mounted) return;
-                showToast(context, '已从 ReelBox 移除');
+                showToast(context, '已从 LumiPlayer 移除');
               },
             ),
             const SizedBox(height: 8),
@@ -299,7 +295,7 @@ Future<void> showBatchActionSheet(
               label: '分享',
               onTap: () {
                 Navigator.of(sheetContext).pop();
-                showToast(context, '分享功能后续开放');
+                openTransferShare(context, items);
               },
             ),
             SheetActionTile(
@@ -312,7 +308,7 @@ Future<void> showBatchActionSheet(
                   context,
                   title: '重命名',
                   description: single
-                      ? '只修改 ReelBox 中显示的名称，不会重命名手机里的文件。'
+                      ? '只修改 LumiPlayer 中显示的名称，不会重命名手机里的文件。'
                       : '多个视频会按「名称 1」「名称 2」依次命名。',
                   initialValue: single ? items.first.displayName : '',
                   hintText: '输入新的显示名称',

@@ -43,7 +43,7 @@ class MediaKitPlaybackEngine implements VideoPlaybackEngine {
     // 这里必须等到有效时长，否则界面会停在 00:00 + 转圈。
     final Duration total = await _waitForDuration();
     debugPrint(
-      '[ReelBox] open ${_shortPath(source)} '
+      '[LumiPlayer] open ${_shortPath(source)} '
       'cost=${watch.elapsedMilliseconds}ms '
       'duration=${total.inMilliseconds}ms '
       'size=${_player.state.width}x${_player.state.height}',
@@ -103,20 +103,20 @@ class MediaKitPlaybackEngine implements VideoPlaybackEngine {
       if (await file.exists()) {
         final Uint8List bytes = await file.readAsBytes();
         await file.delete();
-        debugPrint('[ReelBox] screenshot ok, ${bytes.length} bytes');
+        debugPrint('[LumiPlayer] screenshot ok, ${bytes.length} bytes');
         if (bytes.isNotEmpty) return bytes;
       }
-      debugPrint('[ReelBox] screenshot-to-file produced no file');
+      debugPrint('[LumiPlayer] screenshot-to-file produced no file');
     } on Object catch (error) {
-      debugPrint('[ReelBox] screenshot-to-file failed: $error');
+      debugPrint('[LumiPlayer] screenshot-to-file failed: $error');
     }
 
     try {
       final Uint8List? bytes = await _player.screenshot(format: 'image/jpeg');
-      debugPrint('[ReelBox] screenshot fallback ${bytes?.length ?? 0} bytes');
+      debugPrint('[LumiPlayer] screenshot fallback ${bytes?.length ?? 0} bytes');
       return bytes;
     } on Object catch (error) {
-      debugPrint('[ReelBox] screenshot fallback failed: $error');
+      debugPrint('[LumiPlayer] screenshot fallback failed: $error');
       return null;
     }
   }

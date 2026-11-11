@@ -15,10 +15,10 @@ import '../../library/application/library_controller.dart';
 import '../../library/data/media_scanner.dart';
 import '../../library/domain/models.dart';
 import '../../library/presentation/local_page.dart';
-import '../../magnet/presentation/magnet_page.dart';
 import '../../network/presentation/network_page.dart';
 import '../../profile/presentation/profile_page.dart';
 import '../../settings/application/settings_controller.dart';
+import '../../transfer/presentation/transfer_home_page.dart';
 
 /// 应用外壳：四个底部导航入口。
 class HomeShell extends ConsumerStatefulWidget {
@@ -63,7 +63,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         children: const <Widget>[
           LocalPage(),
           NetworkPage(),
-          MagnetPage(),
+          TransferHomePage(),
           ProfilePage(),
         ],
       ),
@@ -95,9 +95,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   onTap: () => ref.read(navTabProvider.notifier).select(1),
                 ),
                 _NavItem(
-                  icon: Icons.link_rounded,
-                  activeIcon: Icons.link_rounded,
-                  label: '磁力',
+                  icon: Icons.swap_horiz_rounded,
+                  activeIcon: Icons.swap_horiz_rounded,
+                  label: '传输',
                   selected: index == 2,
                   onTap: () => ref.read(navTabProvider.notifier).select(2),
                 ),

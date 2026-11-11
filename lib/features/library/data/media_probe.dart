@@ -38,7 +38,7 @@ class MediaProbe {
     Player? player;
     try {
       player = Player(
-        configuration: const PlayerConfiguration(title: 'ReelBox probe'),
+        configuration: const PlayerConfiguration(title: 'LumiPlayer probe'),
       );
       await player.open(Media(path), play: false);
       final Duration duration = await player.stream.duration

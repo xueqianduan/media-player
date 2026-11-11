@@ -3,7 +3,7 @@
 //
 // 主要内容：
 // - 初始化 media_kit 与数据库
-// - 创建 ProviderScope 并启动 ReelBoxApp
+// - 创建 ProviderScope 并启动 LumiPlayerApp
 // -------------------------------------------------------------------------
 
 import 'app/bootstrap.dart';

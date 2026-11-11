@@ -84,7 +84,7 @@ class MagnetPage extends StatelessWidget {
                     ),
                     const SizedBox(height: 14),
                     Text(
-                      'ReelBox Magnet · V2.0 规划',
+                      'LumiPlayer Magnet · V2.0 规划',
                       style: TextStyle(
                         fontSize: 10.5,
                         color: context.textSecondary,

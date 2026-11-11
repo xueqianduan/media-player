@@ -30,6 +30,9 @@ import '../features/settings/presentation/info_pages.dart';
 import '../features/settings/presentation/library_settings_pages.dart';
 import '../features/settings/presentation/settings_pages.dart';
 import '../features/shell/presentation/home_shell.dart';
+import '../features/transfer/domain/transfer_models.dart';
+import '../features/transfer/presentation/select_files_page.dart';
+import '../features/transfer/presentation/transfer_receive_page.dart';
 
 /// 构建应用路由。测试中也可以调用它获得独立实例。
 GoRouter buildRouter({String initialLocation = '/'}) {
@@ -37,6 +40,17 @@ GoRouter buildRouter({String initialLocation = '/'}) {
     initialLocation: initialLocation,
     routes: <RouteBase>[
       GoRoute(path: '/', builder: (_, _) => const HomeShell()),
+      GoRoute(
+        path: '/transfer/select',
+        builder: (BuildContext context, GoRouterState state) => SelectFilesPage(
+          initialFiles:
+              (state.extra as List<TransferFile>?) ?? const <TransferFile>[],
+        ),
+      ),
+      GoRoute(
+        path: '/transfer/receive',
+        builder: (_, _) => const TransferReceivePage(),
+      ),
       GoRoute(
         path: '/folder/:id',
         builder: (BuildContext context, GoRouterState state) =>

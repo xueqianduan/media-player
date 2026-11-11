@@ -18,7 +18,7 @@ import '../../profile/presentation/profile_page.dart';
 import 'settings_pages.dart';
 
 // ===== 关于 =====
-/// 关于 ReelBox。
+/// 关于 LumiPlayer。
 class AboutPage extends ConsumerWidget {
   const AboutPage({super.key});
 
@@ -27,7 +27,7 @@ class AboutPage extends ConsumerWidget {
     final LibraryState state = ref.watch(libraryControllerProvider);
 
     return SettingsScaffold(
-      title: '关于 ReelBox',
+      title: '关于 LumiPlayer',
       children: <Widget>[
         const SizedBox(height: 8),
         Center(
@@ -52,7 +52,7 @@ class AboutPage extends ConsumerWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                'ReelBox',
+                'LumiPlayer',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
@@ -71,7 +71,7 @@ class AboutPage extends ConsumerWidget {
         AppCard(
           padding: const EdgeInsets.all(16),
           child: Text(
-            'ReelBox 是一款轻量级本地视频播放器。以本地视频文件夹为核心，'
+            'LumiPlayer 是一款轻量级本地视频播放器。以本地视频文件夹为核心，'
             '以视频播放为基础，以视频管理为辅助：不推送内容、不申请无关权限，'
             '视频只保存在你的设备上。',
             style: TextStyle(
@@ -141,7 +141,7 @@ class PrivacyPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const List<List<String>> sections = <List<String>>[
-      <String>['视频只保存在本地', 'ReelBox 不上传、不备份、不分析你的视频内容，所有索引、分类与播放记录都保存在设备本地。'],
+      <String>['视频只保存在本地', 'LumiPlayer 不上传、不备份、不分析你的视频内容，所有索引、分类与播放记录都保存在设备本地。'],
       <String>[
         '需要的权限',
         '视频读取权限用于扫描和播放本地视频；文件选择器权限仅在你主动导入视频时使用。应用不申请通讯录、位置、麦克风等无关权限。',
@@ -152,14 +152,14 @@ class PrivacyPage extends StatelessWidget {
       ],
       <String>[
         '数据删除',
-        '「从 ReelBox 移除」只删除应用内记录，不影响手机中的原始文件；「清空视频库索引」同样不会删除视频文件。',
+        '「从 LumiPlayer 移除」只删除应用内记录，不影响手机中的原始文件；「清空视频库索引」同样不会删除视频文件。',
       ],
       <String>['未来版本', '磁力与云端能力尚未实现，V1.0 不包含账号系统、云端同步与任何网络视频请求。'],
     ];
 
     return SettingsScaffold(
       title: '隐私与权限',
-      subtitle: 'ReelBox 不需要账号，也不会联网上传视频',
+      subtitle: 'LumiPlayer 不需要账号，也不会联网上传视频',
       children: <Widget>[
         for (final List<String> section in sections) ...<Widget>[
           AppCard(
@@ -221,7 +221,7 @@ class HelpPage extends StatelessWidget {
       '磁力功能什么时候可用？',
       'V1.0 只保留入口与预告。磁力链接解析、P2P 下载与云端能力属于后续版本规划，不影响本地视频的浏览与播放。',
     ],
-    <String>['移除视频会删除原文件吗？', '不会。ReelBox 只删除应用内记录。V1.0 不提供删除系统相册原始视频的能力，避免误删。'],
+    <String>['移除视频会删除原文件吗？', '不会。LumiPlayer 只删除应用内记录。V1.0 不提供删除系统相册原始视频的能力，避免误删。'],
   ];
 
   @override

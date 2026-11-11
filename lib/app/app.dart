@@ -15,14 +15,14 @@ import '../core/theme/app_theme.dart';
 import '../features/settings/application/settings_controller.dart';
 import 'router.dart';
 
-/// ReelBox 应用根组件。
-class ReelBoxApp extends ConsumerWidget {
-  const ReelBoxApp({super.key});
+/// LumiPlayer 应用根组件。
+class LumiPlayerApp extends ConsumerWidget {
+  const LumiPlayerApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp.router(
-      title: 'ReelBox',
+      title: 'LumiPlayer',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),

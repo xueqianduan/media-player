@@ -299,7 +299,7 @@ class DualLiveSession {
     try {
       await _release();
     } on Object catch (error) {
-      debugPrint('[ReelBox] close live session failed: $error');
+      debugPrint('[LumiPlayer] close live session failed: $error');
     }
     await _tail.catchError((Object _) {});
     status.dispose();

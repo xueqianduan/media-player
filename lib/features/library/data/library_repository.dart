@@ -455,7 +455,7 @@ class LibraryRepository {
     return next;
   }
 
-  /// 从 ReelBox 移除：只删除应用内记录，不动手机原始文件。
+  /// 从 LumiPlayer 移除：只删除应用内记录，不动手机原始文件。
   LibraryState removeFromLibrary(LibraryState state, Set<String> mediaIds) {
     final List<MediaItem> media = state.media
         .where((MediaItem item) => !mediaIds.contains(item.id))

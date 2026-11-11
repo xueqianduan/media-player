@@ -170,7 +170,7 @@ class _SelectionActionState extends State<_SelectionAction> {
       return;
     }
     _lastFired = now;
-    debugPrint('[ReelBox] selection action: ${widget.label}');
+    debugPrint('[LumiPlayer] selection action: ${widget.label}');
     widget.onTap();
   }
 

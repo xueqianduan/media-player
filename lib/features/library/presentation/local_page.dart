@@ -446,7 +446,7 @@ class _PermissionBanner extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            message ?? 'ReelBox 需要读取视频资源来建立本地视频库。视频只保存在你的设备上，不会上传。',
+            message ?? 'LumiPlayer 需要读取视频资源来建立本地视频库。视频只保存在你的设备上，不会上传。',
             style: TextStyle(
               fontSize: 11.5,
               height: 1.55,
