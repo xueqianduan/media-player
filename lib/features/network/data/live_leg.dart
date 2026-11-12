@@ -19,28 +19,35 @@ import '../domain/live_models.dart';
 /// 画面源会创建 [VideoController] 并保留视频轨；声音源不创建视频控制器，
 /// 并关闭视频轨。两路启动时都先静音，由 [DualLiveSession] 决定哪一路发声。
 class LiveLeg {
-  LiveLeg({
-    required this.picture,
-    required void Function(String message) onError,
-  }) : player = Player(
-         configuration: const PlayerConfiguration(
-           muted: true,
-           bufferSize: 48 * 1024 * 1024,
-         ),
-       ) {
+  LiveLeg({required this.picture, required this.onError})
+    : player = Player(
+        configuration: const PlayerConfiguration(
+          muted: true,
+          bufferSize: 48 * 1024 * 1024,
+        ),
+      ) {
     controller = picture ? VideoController(player) : null;
     _errors = player.stream.error.listen((String message) {
       error = message;
-      onError(message);
+      // 连接阶段由 _connect 统一换线，不往界面上抛错误；
+      // 连接成功后打开，运行中出错才提示用户。
+      if (notifyErrors) onError(message);
     });
   }
 
   final bool picture;
+  final void Function(String message) onError;
   final Player player;
   late final VideoController? controller;
   late final StreamSubscription<String> _errors;
 
   String? error;
+
+  /// 连接成功后再置为 true：只有真正在用的线路才把错误暴露到界面。
+  bool notifyErrors = false;
+
+  /// 单路就绪超时：坏线路尽快失败，避免连续累积等待。
+  static const Duration _readyTimeout = Duration(seconds: 12);
 
   bool _closed = false;
   Future<void>? _closing;
@@ -69,6 +76,8 @@ class LiveLeg {
 
   /// 打开一路直播。直播总时长为 0，不能用「必须读到时长」作为启动条件。
   Future<void> open(LiveStream source) async {
+    final Stopwatch watch = Stopwatch()..start();
+
     await _setProperty('cache', 'yes');
     await _setProperty('cache-secs', '40');
     await _setProperty('demuxer-readahead-secs', '40');
@@ -77,6 +86,10 @@ class LiveLeg {
     await player.open(
       Media(source.url, httpHeaders: source.headers),
       play: false,
+    );
+    debugPrint(
+      '[LumiPlayer] live open request ${watch.elapsedMilliseconds}ms '
+      '(${source.format})',
     );
 
     await player.setVideoTrack(picture ? VideoTrack.auto() : VideoTrack.no());
@@ -87,13 +100,50 @@ class LiveLeg {
     await player.play();
 
     if (picture) {
-      await controller!.waitUntilFirstFrameRendered.timeout(
-        const Duration(seconds: 20),
+      await _waitFirstFrame(watch);
+      debugPrint(
+        '[LumiPlayer] live picture ready in ${watch.elapsedMilliseconds}ms '
+        '(${source.format})',
       );
       return;
     }
 
-    final Stopwatch watch = Stopwatch()..start();
+    await _waitAudioReady(initialPosition, watch);
+    debugPrint(
+      '[LumiPlayer] live voice ready in ${watch.elapsedMilliseconds}ms '
+      '(${source.format})',
+    );
+  }
+
+  /// 首帧与错误流赛跑：线路 403 时立刻失败换线，不再空等首帧超时。
+  Future<void> _waitFirstFrame(Stopwatch watch) async {
+    final String? existing = error;
+    if (existing != null) throw StateError(existing);
+
+    final Completer<void> failure = Completer<void>();
+    final StreamSubscription<String> errors = player.stream.error.listen((
+      String message,
+    ) {
+      if (!failure.isCompleted) {
+        failure.completeError(StateError(message));
+      }
+    });
+    try {
+      await Future.any<void>(<Future<void>>[
+        controller!.waitUntilFirstFrameRendered,
+        failure.future,
+      ]).timeout(_readyTimeout);
+    } on TimeoutException {
+      throw TimeoutException('首帧渲染超时（${watch.elapsedMilliseconds}ms）');
+    } finally {
+      await errors.cancel();
+    }
+  }
+
+  Future<void> _waitAudioReady(
+    Duration initialPosition,
+    Stopwatch watch,
+  ) async {
     while (!_closed) {
       if (error != null) throw StateError(error!);
 
@@ -105,8 +155,8 @@ class LiveLeg {
           player.state.position > initialPosition) {
         return;
       }
-      if (watch.elapsed > const Duration(seconds: 20)) {
-        throw TimeoutException('声音源没有开始播放');
+      if (watch.elapsed > _readyTimeout) {
+        throw TimeoutException('声音源没有开始播放（${watch.elapsedMilliseconds}ms）');
       }
       await Future<void>.delayed(const Duration(milliseconds: 100));
     }

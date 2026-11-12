@@ -82,7 +82,11 @@ class _NetworkPageState extends ConsumerState<NetworkPage> {
     }
     context.push(
       '/network/live',
-      extra: LivePlayArgs(picture: source, voice: voice ?? _voice),
+      extra: LivePlayArgs(
+        picture: source,
+        voice: voice ?? _voice,
+        danmaku: _danmaku,
+      ),
     );
   }
 

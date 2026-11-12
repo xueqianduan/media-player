@@ -303,7 +303,8 @@ class BiliLiveApi {
       <String, String>{
         'room_id': '$roomId',
         'protocol': '0,1',
-        'format': '0,1',
+        // 0=flv、1=ts(HLS)、2=fmp4(HLS)，多要一种就多一组备用线路。
+        'format': '0,1,2',
         'codec': '0',
         'qn': '$qn',
         'platform': 'web',
@@ -339,7 +340,10 @@ class BiliLiveApi {
     for (final Map<String, dynamic> stream in _jsonRows(playurl['stream'])) {
       for (final Map<String, dynamic> format in _jsonRows(stream['format'])) {
         final String formatName = '${format['format_name']}';
-        if (formatName != 'flv' && formatName != 'ts') continue;
+        // fmp4 同样是 HLS（m3u8），mpv 可以直接播。
+        if (formatName != 'flv' && formatName != 'ts' && formatName != 'fmp4') {
+          continue;
+        }
 
         for (final Map<String, dynamic> codec in _jsonRows(format['codec'])) {
           if (codec['codec_name'] != 'avc') continue;

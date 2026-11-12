@@ -51,7 +51,13 @@ class DualLiveSession {
 
   int _requestedQn = 250;
 
+  /// 单路连接的总预算：两轮取流 + 若干候选，超过就放弃，避免无限加载。
+  static const Duration _connectBudget = Duration(seconds: 30);
+
   final Set<LiveLeg> _owned = <LiveLeg>{};
+
+  /// 启动代际：新的 start 会让上一轮的后台解说连接自行作废。
+  int _generation = 0;
   Future<void> _tail = Future<void>.value();
   Future<void>? _closing;
   bool _closed = false;
@@ -89,60 +95,104 @@ class DualLiveSession {
     required bool asPicture,
     int? qn,
   }) async {
-    final LivePlaylist playlist = await api.resolve(
-      room.roomId,
-      qn: qn ?? (asPicture ? _requestedQn : 250),
-      cookie: cookie,
-    );
-    final List<LiveStream> candidates = playlist.streams;
-
-    if (asPicture) {
-      _requestedQn = qn ?? _requestedQn;
-      qualities.value = playlist.qualities;
-      currentQn.value = playlist.currentQn;
-    }
-
+    final String role = asPicture ? '画面源' : '声音源';
+    final Stopwatch total = Stopwatch()..start();
     Object? lastError;
+    int attempts = 0;
 
-    for (final LiveStream source in candidates) {
-      _checkOpen();
+    // 两轮：第一轮把平台返回的候选都试一遍，全失败就重新取流再试一轮
+    // （直链带时效签名，重新取流往往能拿到新的可用节点）。
+    for (int round = 1; round <= 2; round++) {
+      if (total.elapsed >= _connectBudget) break;
 
-      final LiveLeg leg = LiveLeg(
-        picture: asPicture,
-        onError: (String message) {
-          _message('${asPicture ? '画面源' : '声音源'}异常：$message');
-        },
+      final Stopwatch resolveWatch = Stopwatch()..start();
+      final LivePlaylist playlist = await api.resolve(
+        room.roomId,
+        qn: qn ?? (asPicture ? _requestedQn : 250),
+        cookie: cookie,
       );
-      _owned.add(leg);
+      final List<LiveStream> candidates = playlist.streams;
 
       if (asPicture) {
-        picture = leg;
-        // 页面必须及时挂载 Video，首帧检测才能完成。
-        onVideo?.call(leg.controller);
+        _requestedQn = qn ?? _requestedQn;
+        qualities.value = playlist.qualities;
+        currentQn.value = playlist.currentQn;
+      }
+      debugPrint(
+        '[LumiPlayer] live $role resolve #$round '
+        '${resolveWatch.elapsedMilliseconds}ms, ${candidates.length} streams',
+      );
+
+      for (final LiveStream source in candidates) {
+        if (total.elapsed >= _connectBudget) break;
+        attempts++;
+        _checkOpen();
+
+        final Stopwatch createWatch = Stopwatch()..start();
+        final LiveLeg leg = LiveLeg(
+          picture: asPicture,
+          // 连接阶段不提示错误，换线由这里统一处理；成功后才开始上报。
+          onError: (String message) => _message('$role异常：$message'),
+        );
+        debugPrint(
+          '[LumiPlayer] live $role player create '
+          '${createWatch.elapsedMilliseconds}ms',
+        );
+        _owned.add(leg);
+
+        if (asPicture) {
+          picture = leg;
+          // 页面必须及时挂载 Video，首帧检测才能完成。
+          onVideo?.call(leg.controller);
+        }
+
+        final Stopwatch openWatch = Stopwatch()..start();
+        try {
+          // 首帧内部已有 12s 超时，这里再兜一层，防止 player.open 卡住。
+          await leg.open(source).timeout(const Duration(seconds: 15));
+          _checkOpen();
+          leg.notifyErrors = true;
+          debugPrint(
+            '[LumiPlayer] live $role ok ${source.format} '
+            '${openWatch.elapsedMilliseconds}ms (try $attempts)',
+          );
+          return leg;
+        } on Object catch (error) {
+          lastError = error;
+          debugPrint(
+            '[LumiPlayer] live $role fail ${source.format} '
+            '${openWatch.elapsedMilliseconds}ms: $error',
+          );
+          await leg.close().timeout(
+            const Duration(seconds: 8),
+            onTimeout: () {},
+          );
+          _owned.remove(leg);
+          if (picture == leg) {
+            picture = null;
+            if (!_closed) onVideo?.call(null);
+          }
+          _checkOpen();
+        }
       }
 
-      try {
-        await leg.open(source).timeout(const Duration(seconds: 30));
-        _checkOpen();
-        return leg;
-      } on Object catch (error) {
-        lastError = error;
-        await leg.close().timeout(const Duration(seconds: 8), onTimeout: () {});
-        _owned.remove(leg);
-        if (picture == leg) {
-          picture = null;
-          if (!_closed) onVideo?.call(null);
-        }
-        _checkOpen();
+      if (round == 1 && total.elapsed < _connectBudget) {
+        _message('$role线路不可用，正在重新取流…');
       }
     }
 
-    throw LiveApiException('所有直播线路均失败：$lastError');
+    throw LiveApiException('$role所有线路均失败：$lastError');
   }
 
   /// 开始双路播放。[voiceRoom] 为空或未开播时，自动使用赛事原声。
+  ///
+  /// 画面连上就立即出声，解说在后台独立连接：解说慢或失败都不会拖住
+  /// 启动、暂停、切换声音这些操作。
   Future<void> start({required LiveRoom pictureRoom, LiveRoom? voiceRoom}) {
     return _run(() async {
+      final int generation = ++_generation;
+      final Stopwatch watch = Stopwatch()..start();
+
       await _release();
       _checkOpen();
 
@@ -157,30 +207,57 @@ class DualLiveSession {
       try {
         _message('正在连接画面源…');
         picture = await _connect(pictureRoom, asPicture: true);
+        // 画面一就绪就先播原声，不等解说。
+        await _applySound(official: true);
+        _checkOpen();
+        debugPrint(
+          '[LumiPlayer] live picture started in ${watch.elapsedMilliseconds}ms',
+        );
 
-        if (voiceRoom != null && voiceRoom.roomId != pictureRoom.roomId) {
-          try {
-            _message('正在连接声音源…');
-            voice = await _connect(voiceRoom, asPicture: false);
-          } on Object catch (error) {
-            _checkOpen();
-            voiceFailure = '$error';
-            voice = null;
-          }
+        if (voiceRoom == null || voiceRoom.roomId == pictureRoom.roomId) {
+          _message('正在使用赛事原声');
+          return;
         }
 
-        await _applySound(official: voice == null);
-
-        _message(
-          voice == null
-              ? (voiceFailure == null ? '正在使用赛事原声' : '声音源不可用，已切到赛事原声')
-              : '双路直播已开始，可调整同步',
-        );
+        _message('画面已开始，正在连接解说…');
+        unawaited(_connectVoice(voiceRoom, generation));
       } on Object {
         await _release();
         rethrow;
       }
     });
+  }
+
+  /// 后台连接解说。失败只回落到赛事原声，不影响已经在播的画面。
+  Future<void> _connectVoice(LiveRoom room, int generation) async {
+    final Stopwatch watch = Stopwatch()..start();
+    try {
+      final LiveLeg leg = await _connect(room, asPicture: false);
+      if (_closed || generation != _generation) {
+        await leg.close().timeout(const Duration(seconds: 8), onTimeout: () {});
+        return;
+      }
+
+      voice = leg;
+      voiceFailure = null;
+      // 连接期间用户可能已经暂停，新连上的解说保持暂停，避免突然出声。
+      if (paused.value) await leg.player.pause();
+      debugPrint(
+        '[LumiPlayer] live voice ready in ${watch.elapsedMilliseconds}ms',
+      );
+
+      // 用户在等待期间已经点了「解说」的话，连上后立刻切过去。
+      if (usingVoice.value) {
+        await _run(() => _applySound(official: false));
+      }
+      _message('双路直播已就绪，可切换解说声音');
+    } on Object catch (error) {
+      if (_closed || generation != _generation) return;
+      voice = null;
+      voiceFailure = '$error';
+      _message('声音源不可用，继续使用赛事原声');
+      debugPrint('[LumiPlayer] live voice failed: $error');
+    }
   }
 
   Future<void> _applySound({required bool official}) async {
@@ -204,6 +281,35 @@ class DualLiveSession {
   }
 
   Future<void> useOfficialSound() => _run(() => _applySound(official: true));
+
+  /// 刷新画面源：重新解析地址并只重建画面这一路，声音源保持不动。
+  ///
+  /// 直播地址带时效签名，掉流后重新解析通常就能恢复；这里不动声音，
+  /// 已经调好的声音延迟与解说选择都会保留。
+  Future<void> refreshPicture() {
+    return _run(() async {
+      final LiveRoom? room = pictureRoom;
+      if (room == null) throw StateError('还没有画面源');
+
+      _message('正在重新连接画面源…');
+
+      final LiveLeg? old = picture;
+      picture = null;
+      if (!_closed) onVideo?.call(null);
+      if (old != null) {
+        _owned.remove(old);
+        await old.close().timeout(const Duration(seconds: 8), onTimeout: () {});
+      }
+
+      await _connect(room, asPicture: true);
+      _checkOpen();
+      // 新流从当前直播点开始，旧同步偏移不再成立。
+      pictureDelay = Duration.zero;
+      await _applySound(official: voice == null || !usingVoice.value);
+      if (paused.value) await picture?.player.pause();
+      _message('画面源已刷新');
+    });
+  }
 
   /// 切换画面画质：重新取流并只重建画面这一路，声音源保持不动。
   Future<void> switchQuality(int qn) {
