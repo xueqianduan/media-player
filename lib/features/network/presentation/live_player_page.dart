@@ -14,6 +14,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/ui_kit.dart';
+import '../application/bili_account_controller.dart';
 import '../application/network_controller.dart';
 import '../data/dual_live_session.dart';
 import '../domain/live_models.dart';
@@ -45,6 +46,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
   bool _usingVoice = false;
   String? _error;
   String? _voiceWarning;
+  int _qn = 250;
 
   @override
   // ===== 生命周期与启动 =====
@@ -59,6 +61,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
       previous.status.removeListener(_onStatus);
       previous.usingVoice.removeListener(_onSoundChanged);
       previous.paused.removeListener(_onPausedChanged);
+      previous.currentQn.removeListener(_onQnChanged);
       await previous.close();
     }
 
@@ -69,11 +72,13 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
       _starting = true;
       _error = null;
       _voiceWarning = null;
+      _qn = 250;
       _status = '正在连接画面源…';
     });
 
     final DualLiveSession session = DualLiveSession(
       api: ref.read(biliLiveApiProvider),
+      cookie: ref.read(biliSessionProvider).cookieHeader,
       onVideo: (VideoController? controller) {
         if (mounted) setState(() => _controller = controller);
       },
@@ -81,6 +86,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
     session.status.addListener(_onStatus);
     session.usingVoice.addListener(_onSoundChanged);
     session.paused.addListener(_onPausedChanged);
+    session.currentQn.addListener(_onQnChanged);
     setState(() => _session = session);
 
     try {
@@ -118,6 +124,11 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
     setState(() => _paused = _session?.paused.value ?? false);
   }
 
+  void _onQnChanged() {
+    if (!mounted) return;
+    setState(() => _qn = _session?.currentQn.value ?? _qn);
+  }
+
   // ===== 播放控制：暂停 / 声音 / 同步 =====
   Future<void> _togglePause() async {
     final DualLiveSession? session = _session;
@@ -138,6 +149,72 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
       } else {
         await session.useCommentatorSound();
       }
+    } on Object catch (error) {
+      if (mounted) showToast(context, '$error');
+    }
+  }
+
+  Future<void> _showQualitySheet() async {
+    final DualLiveSession? session = _session;
+    if (session == null) return;
+    final List<LiveQuality> options = session.qualities.value;
+    if (options.isEmpty) {
+      showToast(context, '这个直播间暂时没有可选画质');
+      return;
+    }
+    final int current = session.currentQn.value;
+    final bool loggedIn = ref.read(biliAccountProvider).loggedIn;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF16181F),
+      builder: (BuildContext sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const Text(
+                  '画质',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  loggedIn
+                      ? '当前使用 B 站账号请求；切换会重连画面源'
+                      : '未登录只能拿到公开档位，登录 B 站后可尝试更高画质',
+                  style: const TextStyle(color: Colors.white38, fontSize: 11.5),
+                ),
+                const SizedBox(height: 10),
+                for (final LiveQuality option in options)
+                  _QualityTile(
+                    label: option.label,
+                    selected: option.qn == current,
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      _switchQuality(option.qn);
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _switchQuality(int qn) async {
+    final DualLiveSession? session = _session;
+    if (session == null) return;
+    setState(() => _status = '正在切换画质…');
+    try {
+      await session.switchQuality(qn);
     } on Object catch (error) {
       if (mounted) showToast(context, '$error');
     }
@@ -171,6 +248,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
       session.status.removeListener(_onStatus);
       session.usingVoice.removeListener(_onSoundChanged);
       session.paused.removeListener(_onPausedChanged);
+      session.currentQn.removeListener(_onQnChanged);
       session.close();
     }
     super.dispose();
@@ -297,6 +375,43 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
               ],
             ),
           ),
+          if (_controller != null)
+            GestureDetector(
+              onTap: _showQualitySheet,
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                margin: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 9,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(9),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.14),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    const Icon(
+                      Icons.high_quality_rounded,
+                      size: 13,
+                      color: Colors.white70,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      LiveQuality.labelOf(_qn),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           if (_starting)
             const SizedBox(
               width: 16,
@@ -536,6 +651,48 @@ class _SyncAction extends StatelessWidget {
                 ],
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QualityTile extends StatelessWidget {
+  const _QualityTile({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: selected ? null : onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 11),
+        child: Row(
+          children: <Widget>[
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? AppColors.primary : Colors.white,
+                fontSize: 13.5,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+            const Spacer(),
+            if (selected)
+              const Icon(
+                Icons.check_rounded,
+                size: 17,
+                color: AppColors.primary,
+              ),
           ],
         ),
       ),

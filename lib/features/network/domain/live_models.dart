@@ -13,6 +13,7 @@ class LiveRoom {
     this.title = '',
     this.live = false,
     this.coverUrl = '',
+    this.avatarUrl = '',
     this.isUp = false,
   });
 
@@ -31,8 +32,11 @@ class LiveRoom {
   /// 是否正在直播（搜索时的快照，播放前会重新校验）。
   final bool live;
 
-  /// 封面图（直播间封面或主播头像）。
+  /// 直播间封面。
   final String coverUrl;
+
+  /// 主播头像。与封面分开保存，避免把直播封面当头像。
+  final String avatarUrl;
 
   /// 是否来自「主播」搜索结果（而不是直播间）。
   final bool isUp;
@@ -45,6 +49,7 @@ class LiveRoom {
     String? title,
     bool? live,
     String? coverUrl,
+    String? avatarUrl,
   }) {
     return LiveRoom(
       roomId: roomId,
@@ -53,6 +58,7 @@ class LiveRoom {
       title: title ?? this.title,
       live: live ?? this.live,
       coverUrl: coverUrl ?? this.coverUrl,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
       isUp: isUp,
     );
   }
@@ -64,6 +70,7 @@ class LiveRoom {
     'title': title,
     'live': live,
     'coverUrl': coverUrl,
+    'avatarUrl': avatarUrl,
     'isUp': isUp,
   };
 
@@ -79,6 +86,8 @@ class LiveRoom {
       title: json['title'] as String? ?? '',
       live: json['live'] as bool? ?? false,
       coverUrl: json['coverUrl'] as String? ?? '',
+      // 旧数据没有头像字段：留空由界面用占位图，不把封面当头像。
+      avatarUrl: json['avatarUrl'] as String? ?? '',
       isUp: json['isUp'] as bool? ?? false,
     );
   }
@@ -99,12 +108,88 @@ class LiveStream {
   final Map<String, String> headers;
 }
 
-/// 双路观赛组合：画面来源 + 声音来源。
+/// 弹幕来源（独立于声音选择）。
+enum DanmakuSource { off, picture, voice }
+
+extension DanmakuSourceX on DanmakuSource {
+  String get label {
+    switch (this) {
+      case DanmakuSource.off:
+        return '关闭';
+      case DanmakuSource.picture:
+        return '画面直播间';
+      case DanmakuSource.voice:
+        return '声音直播间';
+    }
+  }
+
+  static DanmakuSource fromName(String? value) {
+    for (final DanmakuSource source in DanmakuSource.values) {
+      if (source.name == value) return source;
+    }
+    return DanmakuSource.off;
+  }
+}
+
+/// 直播画质档位。
+class LiveQuality {
+  const LiveQuality({required this.qn, required this.label});
+
+  final int qn;
+  final String label;
+
+  static String labelOf(int qn) {
+    switch (qn) {
+      case 30000:
+        return '杜比';
+      case 20000:
+        return '4K';
+      case 10000:
+        return '原画';
+      case 400:
+        return '蓝光';
+      case 250:
+        return '超清';
+      case 150:
+        return '高清';
+      case 80:
+        return '流畅';
+      default:
+        return '清晰度 $qn';
+    }
+  }
+
+  @override
+  bool operator ==(Object other) => other is LiveQuality && other.qn == qn;
+
+  @override
+  int get hashCode => qn.hashCode;
+}
+
+/// 一次取流结果：候选地址 + 可选画质 + 实际生效画质。
+class LivePlaylist {
+  const LivePlaylist({
+    required this.streams,
+    this.qualities = const <LiveQuality>[],
+    this.currentQn = 0,
+  });
+
+  final List<LiveStream> streams;
+  final List<LiveQuality> qualities;
+  final int currentQn;
+}
+
+/// 双路观赛组合：画面来源 + 可选声音来源 + 弹幕来源。
 class LivePreset {
-  const LivePreset({this.picture, this.voice});
+  const LivePreset({
+    this.picture,
+    this.voice,
+    this.danmaku = DanmakuSource.off,
+  });
 
   final LiveRoom? picture;
   final LiveRoom? voice;
+  final DanmakuSource danmaku;
 
   bool get isEmpty => picture == null;
 
@@ -112,24 +197,29 @@ class LivePreset {
     LiveRoom? picture,
     LiveRoom? voice,
     bool clearVoice = false,
+    DanmakuSource? danmaku,
   }) {
     return LivePreset(
       picture: picture ?? this.picture,
       voice: clearVoice ? null : (voice ?? this.voice),
+      danmaku: danmaku ?? this.danmaku,
     );
   }
 
   Map<String, dynamic> toJson() => <String, dynamic>{
     'picture': picture?.toJson(),
     'voice': voice?.toJson(),
+    'danmaku': danmaku.name,
   };
 
   static LivePreset fromJson(Object? value) {
     if (value is! Map) return const LivePreset();
     final Map<String, dynamic> json = Map<String, dynamic>.from(value);
+    // 旧组合没有弹幕字段，按关闭处理。
     return LivePreset(
       picture: LiveRoom.fromJson(json['picture']),
       voice: LiveRoom.fromJson(json['voice']),
+      danmaku: DanmakuSourceX.fromName(json['danmaku'] as String?),
     );
   }
 }

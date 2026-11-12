@@ -21,9 +21,12 @@ import 'live_leg.dart';
 ///
 /// 所有控制操作串行执行，避免快速点击导致播放器状态冲突。
 class DualLiveSession {
-  DualLiveSession({required this.api, this.onVideo});
+  DualLiveSession({required this.api, this.onVideo, this.cookie});
 
   final BiliLiveApi api;
+
+  /// 已登录时的平台 Cookie，用于请求更高画质；为空表示匿名。
+  final String? cookie;
 
   /// 画面控制器变化时回调（页面据此挂载 / 卸载 [Video]）。
   final void Function(VideoController? controller)? onVideo;
@@ -40,6 +43,13 @@ class DualLiveSession {
 
   Duration pictureDelay = Duration.zero;
   Duration voiceDelay = Duration.zero;
+
+  /// 画面源实际画质与本次可选画质。
+  final ValueNotifier<int> currentQn = ValueNotifier<int>(250);
+  final ValueNotifier<List<LiveQuality>> qualities =
+      ValueNotifier<List<LiveQuality>>(const <LiveQuality>[]);
+
+  int _requestedQn = 250;
 
   final Set<LiveLeg> _owned = <LiveLeg>{};
   Future<void> _tail = Future<void>.value();
@@ -74,8 +84,24 @@ class DualLiveSession {
     return next;
   }
 
-  Future<LiveLeg> _connect(LiveRoom room, {required bool asPicture}) async {
-    final List<LiveStream> candidates = await api.resolve(room.roomId);
+  Future<LiveLeg> _connect(
+    LiveRoom room, {
+    required bool asPicture,
+    int? qn,
+  }) async {
+    final LivePlaylist playlist = await api.resolve(
+      room.roomId,
+      qn: qn ?? (asPicture ? _requestedQn : 250),
+      cookie: cookie,
+    );
+    final List<LiveStream> candidates = playlist.streams;
+
+    if (asPicture) {
+      _requestedQn = qn ?? _requestedQn;
+      qualities.value = playlist.qualities;
+      currentQn.value = playlist.currentQn;
+    }
+
     Object? lastError;
 
     for (final LiveStream source in candidates) {
@@ -178,6 +204,42 @@ class DualLiveSession {
   }
 
   Future<void> useOfficialSound() => _run(() => _applySound(official: true));
+
+  /// 切换画面画质：重新取流并只重建画面这一路，声音源保持不动。
+  Future<void> switchQuality(int qn) {
+    return _run(() async {
+      final LiveRoom? room = pictureRoom;
+      if (room == null) throw StateError('还没有画面源');
+      if (picture == null) throw StateError('画面源尚未连接');
+      if (qn == currentQn.value) return;
+
+      final int previous = currentQn.value;
+      _message('正在切换画质…');
+
+      final LiveLeg? old = picture;
+      picture = null;
+      if (!_closed) onVideo?.call(null);
+      if (old != null) {
+        _owned.remove(old);
+        await old.close().timeout(const Duration(seconds: 8), onTimeout: () {});
+      }
+
+      try {
+        await _connect(room, asPicture: true, qn: qn);
+      } on Object {
+        _checkOpen();
+        _message('该画质不可用，已切回原档位');
+        await _connect(room, asPicture: true, qn: previous);
+      }
+
+      _checkOpen();
+      // 新流从当前直播点开始，旧同步偏移不再成立。
+      pictureDelay = Duration.zero;
+      await _applySound(official: voice == null || !usingVoice.value);
+      if (paused.value) await picture?.player.pause();
+      _message('画质：${LiveQuality.labelOf(currentQn.value)}');
+    });
+  }
 
   Future<void> useCommentatorSound() async {
     if (voice == null) {
@@ -305,5 +367,7 @@ class DualLiveSession {
     status.dispose();
     usingVoice.dispose();
     paused.dispose();
+    currentQn.dispose();
+    qualities.dispose();
   }
 }

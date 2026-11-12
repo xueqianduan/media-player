@@ -171,8 +171,9 @@ class BiliLiveApi {
       if (roomId <= 0) continue;
       final bool isUp = row['_up'] == true;
       final String cover = _plainText(
-        row['cover'] ?? row['user_cover'] ?? row['uface'] ?? row['face'],
+        row['cover'] ?? row['user_cover'] ?? row['keyframe'],
       );
+      final String avatar = _plainText(row['uface'] ?? row['face']);
       rooms.putIfAbsent(
         roomId,
         () => LiveRoom(
@@ -184,6 +185,7 @@ class BiliLiveApi {
           title: _plainText(row['title']),
           live: _jsonInt(row['live_status']) == 1,
           coverUrl: cover,
+          avatarUrl: avatar,
           isUp: isUp,
         ),
       );
@@ -245,19 +247,39 @@ class BiliLiveApi {
       throw const LiveApiException('找不到这个直播间，请检查房间号');
     }
 
+    // getRoomBaseInfo 不带主播头像，单独取一次房间资料（失败不影响主体信息）。
+    Map<String, dynamic> info = <String, dynamic>{};
+    try {
+      info = await _get(
+        'api.live.bilibili.com',
+        '/room/v1/Room/get_info',
+        <String, String>{'room_id': '$roomId'},
+      );
+    } on Object {
+      info = <String, dynamic>{};
+    }
+
     final String name = _plainText(row['uname']);
     return LiveRoom(
       roomId: roomId,
       uid: _jsonInt(row['uid']),
       name: name.isEmpty ? '直播间 $roomId' : name,
-      title: _plainText(row['title']),
+      title: _plainText(info['title'] ?? row['title']),
       live: _jsonInt(row['live_status']) == 1,
       coverUrl: _plainText(row['cover'] ?? row['keyframe']),
+      avatarUrl: _plainText(info['face']),
     );
   }
 
   /// 解析房间号并返回本次可用的播放地址（FLV 优先，HLS 兜底）。
-  Future<List<LiveStream>> resolve(int inputRoomId) async {
+  ///
+  /// [qn] 是期望画质（10000 原画 / 400 蓝光 / 250 超清 / 150 高清 / 80 流畅），
+  /// [cookie] 传入登录态可尝试获取更高档位；实际结果看 [LivePlaylist.currentQn]。
+  Future<LivePlaylist> resolve(
+    int inputRoomId, {
+    int qn = 10000,
+    String? cookie,
+  }) async {
     final Map<String, dynamic> room = await _get(
       'api.live.bilibili.com',
       '/room/v1/Room/room_init',
@@ -283,10 +305,11 @@ class BiliLiveApi {
         'protocol': '0,1',
         'format': '0,1',
         'codec': '0',
-        'qn': '250',
+        'qn': '$qn',
         'platform': 'web',
         'ptype': '8',
       },
+      cookie: cookie,
     );
 
     if (_jsonInt(data['live_status']) != 1) {
@@ -300,6 +323,19 @@ class BiliLiveApi {
     final List<LiveStream> flv = <LiveStream>[];
     final List<LiveStream> hls = <LiveStream>[];
 
+    final Map<int, LiveQuality> qualityByQn = <int, LiveQuality>{};
+    for (final Map<String, dynamic> row in _jsonRows(playurl['g_qn_desc'])) {
+      final int value = _jsonInt(row['qn']);
+      if (value <= 0) continue;
+      final String desc = _plainText(row['desc']);
+      qualityByQn[value] = LiveQuality(
+        qn: value,
+        label: desc.isEmpty ? LiveQuality.labelOf(value) : desc,
+      );
+    }
+    final Set<int> acceptQn = <int>{};
+    int currentQn = 0;
+
     for (final Map<String, dynamic> stream in _jsonRows(playurl['stream'])) {
       for (final Map<String, dynamic> format in _jsonRows(stream['format'])) {
         final String formatName = '${format['format_name']}';
@@ -307,6 +343,14 @@ class BiliLiveApi {
 
         for (final Map<String, dynamic> codec in _jsonRows(format['codec'])) {
           if (codec['codec_name'] != 'avc') continue;
+
+          final int codecQn = _jsonInt(codec['current_qn']);
+          if (currentQn == 0 && codecQn > 0) currentQn = codecQn;
+          for (final Object? value
+              in codec['accept_qn'] as List<Object?>? ?? const <Object?>[]) {
+            final int parsed = _jsonInt(value);
+            if (parsed > 0) acceptQn.add(parsed);
+          }
 
           for (final Map<String, dynamic> node in _jsonRows(
             codec['url_info'],
@@ -338,7 +382,26 @@ class BiliLiveApi {
     if (candidates.isEmpty) {
       throw const LiveApiException('当前没有返回可播放的直播地址，请稍后重试');
     }
-    return candidates;
+
+    if (acceptQn.isNotEmpty) {
+      qualityByQn.removeWhere(
+        (int key, LiveQuality value) => !acceptQn.contains(key),
+      );
+      for (final int value in acceptQn) {
+        qualityByQn.putIfAbsent(
+          value,
+          () => LiveQuality(qn: value, label: LiveQuality.labelOf(value)),
+        );
+      }
+    }
+    final List<LiveQuality> qualities = qualityByQn.values.toList()
+      ..sort((LiveQuality a, LiveQuality b) => b.qn.compareTo(a.qn));
+
+    return LivePlaylist(
+      streams: candidates,
+      qualities: qualities,
+      currentQn: currentQn > 0 ? currentQn : qn,
+    );
   }
 
   /// 从用户输入中解析房间号：支持纯数字、live.bilibili.com/12345 等。

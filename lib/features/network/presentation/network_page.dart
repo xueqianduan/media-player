@@ -13,9 +13,14 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/ui_kit.dart';
+import '../application/bili_account_controller.dart';
+import '../data/bili_cookie_bridge.dart';
+import '../data/bili_session.dart';
 import '../application/network_controller.dart';
 import '../data/bili_live_api.dart';
 import '../domain/live_models.dart';
+import 'bili_account_sheet.dart';
+import 'bili_login_page.dart';
 import 'live_player_page.dart';
 import 'live_search_page.dart';
 
@@ -32,6 +37,7 @@ class _NetworkPageState extends ConsumerState<NetworkPage> {
 
   LiveRoom? _picture;
   LiveRoom? _voice;
+  DanmakuSource _danmaku = DanmakuSource.off;
   bool _managing = false;
 
   @override
@@ -42,6 +48,7 @@ class _NetworkPageState extends ConsumerState<NetworkPage> {
     final LivePreset preset = ref.read(networkControllerProvider).preset;
     _picture = preset.picture;
     _voice = preset.voice;
+    _danmaku = preset.danmaku;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         ref.read(networkControllerProvider.notifier).refreshFavoriteStatus();
@@ -86,7 +93,9 @@ class _NetworkPageState extends ConsumerState<NetworkPage> {
     }
     ref
         .read(networkControllerProvider.notifier)
-        .savePreset(LivePreset(picture: _picture, voice: _voice));
+        .savePreset(
+          LivePreset(picture: _picture, voice: _voice, danmaku: _danmaku),
+        );
     showToast(context, '已保存组合');
   }
 
@@ -232,6 +241,10 @@ class _NetworkPageState extends ConsumerState<NetworkPage> {
                   label: const Text('添加链接', style: TextStyle(fontSize: 13.5)),
                 ),
               ],
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 2, 16, 12),
+              child: _BiliAccountCard(),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -418,6 +431,91 @@ class _NetworkPageState extends ConsumerState<NetworkPage> {
     ];
   }
 
+  /// 弹幕来源：关闭 / 画面直播间 / 声音直播间。
+  Widget _buildDanmakuPicker(BuildContext context) {
+    final String current = _danmaku == DanmakuSource.off
+        ? '已关闭'
+        : (_danmaku == DanmakuSource.picture
+              ? (_picture?.name ?? '画面直播间')
+              : (_voice?.name ?? '声音直播间'));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Icon(
+              Icons.chat_bubble_outline_rounded,
+              size: 12,
+              color: context.textSecondary,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              '弹幕来源',
+              style: TextStyle(fontSize: 10.5, color: context.textSecondary),
+            ),
+          ],
+        ),
+        const SizedBox(height: 7),
+        Container(
+          height: 34,
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: context.isDark
+                ? Colors.white.withValues(alpha: 0.06)
+                : const Color(0xFFEFF1F8),
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Row(
+            children: <Widget>[
+              for (final DanmakuSource option in DanmakuSource.values)
+                Expanded(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      if (option == DanmakuSource.voice && _voice == null) {
+                        showToast(context, '先选择声音来源，才能看它的弹幕');
+                        return;
+                      }
+                      setState(() => _danmaku = option);
+                    },
+                    child: Container(
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: _danmaku == option
+                            ? AppColors.primary
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                      child: Text(
+                        option.label,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: _danmaku == option
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                          color: _danmaku == option
+                              ? Colors.white
+                              : context.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          '当前弹幕：$current',
+          style: TextStyle(
+            fontSize: 10,
+            color: context.textSecondary.withValues(alpha: 0.9),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildDualCard(BuildContext context) {
     final bool hasPicture = _picture != null;
     final bool voiceLive = _voice?.live ?? false;
@@ -497,45 +595,26 @@ class _NetworkPageState extends ConsumerState<NetworkPage> {
             ],
           ),
           const SizedBox(height: 14),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: _SourceTile(
-                  label: '画面来源',
-                  icon: Icons.desktop_windows_rounded,
-                  room: _picture,
-                  onTap: () => _pickSource(LiveSourceSlot.picture),
-                ),
-              ),
-              SizedBox(
-                width: 26,
-                child: Center(
-                  child: Container(
-                    width: 22,
-                    height: 22,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.10),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.link_rounded,
-                      size: 13,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: _SourceTile(
-                  label: '声音来源',
-                  icon: Icons.headphones_rounded,
-                  room: _voice,
-                  hint: '可选',
-                  onTap: () => _pickSource(LiveSourceSlot.voice),
-                ),
-              ),
-            ],
+          _SourceTile(
+            label: '画面来源',
+            icon: Icons.desktop_windows_rounded,
+            room: _picture,
+            emptyHint: '选择赛事或直播画面',
+            onTap: () => _pickSource(LiveSourceSlot.picture),
           ),
+          const SizedBox(height: 12),
+          _SourceTile(
+            label: '声音来源',
+            icon: Icons.headphones_rounded,
+            room: _voice,
+            emptyHint: '选择解说声音，可先听原声',
+            onTap: () => _pickSource(LiveSourceSlot.voice),
+            onClear: _voice == null
+                ? null
+                : () => setState(() => _voice = null),
+          ),
+          const SizedBox(height: 14),
+          _buildDanmakuPicker(context),
           const SizedBox(height: 10),
           Row(
             children: <Widget>[
@@ -822,92 +901,319 @@ class _AddLinkDialogState extends State<_AddLinkDialog> {
   }
 }
 
-/// 双路观赛里的来源卡：标签 + 名称 + 副标题 + 更换。
+/// 双路观赛里的来源行：标签 + 状态 + 更换，下面是头像与房间信息。
 class _SourceTile extends StatelessWidget {
   const _SourceTile({
     required this.label,
     required this.icon,
     required this.room,
     required this.onTap,
-    this.hint,
+    this.emptyHint = '点击选择',
+    this.onClear,
   });
 
   final String label;
   final IconData icon;
   final LiveRoom? room;
-  final String? hint;
+  final String emptyHint;
   final VoidCallback onTap;
+  final VoidCallback? onClear;
 
   @override
   Widget build(BuildContext context) {
     final LiveRoom? value = room;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
-      decoration: BoxDecoration(
-        color: context.isDark
-            ? Colors.white.withValues(alpha: 0.04)
-            : const Color(0xFFF7F8FD),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Icon(icon, size: 12, color: context.textSecondary),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Icon(icon, size: 12, color: context.textSecondary),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(fontSize: 10.5, color: context.textSecondary),
+            ),
+            const Spacer(),
+            if (value != null) ...<Widget>[
+              Container(
+                width: 5,
+                height: 5,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: value.live
+                      ? const Color(0xFF37C26A)
+                      : context.textSecondary.withValues(alpha: 0.5),
+                ),
+              ),
               const SizedBox(width: 4),
               Text(
-                label,
-                style: TextStyle(fontSize: 10.5, color: context.textSecondary),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            value?.name ?? '未选择',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: value == null
-                  ? context.textSecondary
-                  : context.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            value == null
-                ? (hint ?? '点击选择')
-                : 'B站 · ${value.isUp ? '主播' : '房间 ${value.roomId}'}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 10.5,
-              color: context.textSecondary.withValues(alpha: 0.9),
-            ),
-          ),
-          const SizedBox(height: 8),
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: onTap,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Text(
-                '更换',
+                value.live ? '直播中' : '未开播',
                 style: TextStyle(
-                  fontSize: 10.5,
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.w500,
+                  fontSize: 10,
+                  color: value.live
+                      ? const Color(0xFF37C26A)
+                      : context.textSecondary,
+                ),
+              ),
+              const SizedBox(width: 6),
+            ],
+            if (onClear != null)
+              GestureDetector(
+                onTap: onClear,
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 5),
+                  child: Text(
+                    '清除',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: context.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onTap,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: const Text(
+                  '更换',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
             ),
+          ],
+        ),
+        const SizedBox(height: 7),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              _RoomAvatar(room: value),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      value?.name ?? '未选择',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: value == null
+                            ? context.textSecondary
+                            : context.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      value == null
+                          ? emptyHint
+                          : (value.title.isEmpty
+                                ? 'B站 · 房间 ${value.roomId}'
+                                : value.title),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        height: 1.4,
+                        color: context.textSecondary,
+                      ),
+                    ),
+                    if (value != null) ...<Widget>[
+                      const SizedBox(height: 3),
+                      Text(
+                        'B站 · 房间 ${value.roomId}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: context.textSecondary.withValues(alpha: 0.8),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
           ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 房间头像：没有头像或加载失败时用占位图。
+class _RoomAvatar extends StatelessWidget {
+  const _RoomAvatar({required this.room});
+
+  final LiveRoom? room;
+
+  static const double size = 46;
+
+  @override
+  Widget build(BuildContext context) {
+    final String raw = room?.avatarUrl ?? '';
+    final String url = raw.startsWith('//') ? 'https:$raw' : raw;
+    // 46dp 的头像用 160px 缩略图即可，原图常见 1MB 以上。
+    final String thumb =
+        url.isEmpty ||
+            !url.contains('hdslb.com') ||
+            url.contains('@') ||
+            url.contains('?')
+        ? url
+        : '$url@160w_160h_1c.webp';
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: thumb.isEmpty
+            ? _fallback(context)
+            : Image.network(
+                thumb,
+                fit: BoxFit.cover,
+                headers: const <String, String>{
+                  'Referer': 'https://www.bilibili.com/',
+                },
+                errorBuilder: (_, _, _) => _fallback(context),
+                loadingBuilder:
+                    (BuildContext context, Widget child, ImageChunkEvent? p) =>
+                        p == null ? child : _fallback(context),
+              ),
+      ),
+    );
+  }
+
+  Widget _fallback(BuildContext context) {
+    return Container(
+      color: context.softPrimary,
+      alignment: Alignment.center,
+      child: Icon(
+        Icons.person_rounded,
+        size: size * 0.5,
+        color: AppColors.primary,
+      ),
+    );
+  }
+}
+
+/// B 站账号模块：未登录显示游客与登录入口，已登录显示真实头像与用户名。
+class _BiliAccountCard extends ConsumerWidget {
+  const _BiliAccountCard();
+
+  Future<void> _manage(BuildContext context) async {
+    final bool? switchAccount = await showBiliAccountSheet(context);
+    if (switchAccount != true || !context.mounted) return;
+    // 先清掉 WebView 里的旧账号 Cookie，官方登录页才会回到空白的登录表单。
+    await BiliCookieBridge.clear();
+    if (!context.mounted) return;
+    await showBiliLoginPage(context);
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final BiliAccountState state = ref.watch(biliAccountProvider);
+    final BiliAccount? account = state.account;
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(14, 11, 12, 11),
+      onTap: () =>
+          account == null ? showBiliLoginPage(context) : _manage(context),
+      child: Row(
+        children: <Widget>[
+          if (account == null)
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: context.softPrimary,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.person_rounded,
+                size: 22,
+                color: AppColors.primary,
+              ),
+            )
+          else
+            BiliAvatar(url: account.face, size: 42),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  account?.name ?? '游客',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: context.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  state.checking
+                      ? '正在检查账号状态…'
+                      : (state.error ??
+                            (account == null ? '登录后可尝试更高画质' : 'B站账号 · 已登录')),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: state.error != null
+                        ? const Color(0xFFE24B4A)
+                        : context.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (account == null)
+            OutlinedButton(
+              onPressed: () => showBiliLoginPage(context),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                side: BorderSide(
+                  color: AppColors.primary.withValues(alpha: 0.4),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                minimumSize: const Size(0, 32),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: const Text('登录 B站', style: TextStyle(fontSize: 11.5)),
+            )
+          else
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  '管理',
+                  style: TextStyle(fontSize: 11.5, color: AppColors.primary),
+                ),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  size: 16,
+                  color: AppColors.primary,
+                ),
+              ],
+            ),
         ],
       ),
     );
@@ -954,7 +1260,10 @@ class _FavoriteCard extends StatelessWidget {
                         color: AppColors.primary,
                       ),
                     )
-                  : _NetworkCover(url: room.coverUrl),
+                  : _NetworkCover(
+                      url: room.coverUrl,
+                      avatarUrl: room.avatarUrl,
+                    ),
             ),
           ),
           const SizedBox(width: 12),
@@ -1055,21 +1364,49 @@ class _FavoriteCard extends StatelessWidget {
   }
 }
 
-/// 收藏封面：加载失败时回落到直播图标。
+/// 收藏卡片封面：没有封面（未开播）时用主播头像顶替，再没有才显示图标。
 class _NetworkCover extends StatelessWidget {
-  const _NetworkCover({required this.url});
+  const _NetworkCover({required this.url, this.avatarUrl = ''});
 
   final String url;
+  final String avatarUrl;
 
   @override
   Widget build(BuildContext context) {
-    final String normalized = url.startsWith('//') ? 'https:$url' : url;
-    if (normalized.isEmpty) return _fallback(context);
+    final String cover = _thumb(_normalize(url), '288w_176h_1c.webp');
+    final String avatar = _thumb(_normalize(avatarUrl), '160w_160h_1c.webp');
+    if (cover.isNotEmpty) {
+      return _image(
+        cover,
+        onError: () => avatar.isEmpty
+            ? _fallback(context)
+            : _image(avatar, onError: () => _fallback(context)),
+      );
+    }
+    if (avatar.isNotEmpty) {
+      return _image(avatar, onError: () => _fallback(context));
+    }
+    return _fallback(context);
+  }
+
+  static String _normalize(String raw) {
+    if (raw.isEmpty) return '';
+    return raw.startsWith('//') ? 'https:$raw' : raw;
+  }
+
+  /// B 站图床的缩略参数：96×58 的格子没必要拉 1MB+ 的原图。
+  static String _thumb(String url, String spec) {
+    if (url.isEmpty || !url.contains('hdslb.com')) return url;
+    if (url.contains('@') || url.contains('?')) return url;
+    return '$url@$spec';
+  }
+
+  Widget _image(String url, {required Widget Function() onError}) {
     return Image.network(
-      normalized,
+      url,
       fit: BoxFit.cover,
       headers: const <String, String>{'Referer': 'https://live.bilibili.com/'},
-      errorBuilder: (_, _, _) => _fallback(context),
+      errorBuilder: (_, _, _) => onError(),
     );
   }
 

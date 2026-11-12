@@ -463,7 +463,11 @@ class _RoomCard extends StatelessWidget {
             child: SizedBox(
               width: 72,
               height: 54,
-              child: _Cover(url: room.coverUrl, icon: Icons.live_tv_rounded),
+              child: _Cover(
+                url: room.coverUrl,
+                avatarUrl: room.avatarUrl,
+                icon: Icons.live_tv_rounded,
+              ),
             ),
           ),
           const SizedBox(width: 12),
@@ -540,26 +544,61 @@ class _RoomCard extends StatelessWidget {
   }
 }
 
-/// 封面图：加载失败时回落到图标。
+/// 封面图：没有封面（未开播的房间接口不返回封面）时用主播头像顶替，
+/// 两者都拿不到才回落到图标。
 class _Cover extends StatelessWidget {
-  const _Cover({required this.url, required this.icon});
+  const _Cover({required this.url, required this.icon, this.avatarUrl = ''});
 
   final String url;
   final IconData icon;
+  final String avatarUrl;
 
   @override
   Widget build(BuildContext context) {
-    final String normalized = url.startsWith('//') ? 'https:$url' : url;
-    if (normalized.isEmpty) return _fallback(context);
+    final String cover = _thumb(_normalize(url), '240w_180h_1c.webp');
+    final String avatar = _thumb(_normalize(avatarUrl), '160w_160h_1c.webp');
+    if (cover.isNotEmpty) {
+      return _image(
+        cover,
+        onError: () => avatar.isEmpty
+            ? _fallback(context)
+            : _image(avatar, onError: () => _fallback(context)),
+      );
+    }
+    if (avatar.isNotEmpty) {
+      return _image(avatar, onError: () => _fallback(context));
+    }
+    return _fallback(context);
+  }
+
+  static String _normalize(String raw) {
+    if (raw.isEmpty) return '';
+    // 接口有 //i0.hdslb.com/... 这种省略协议的写法。
+    return raw.startsWith('//') ? 'https:$raw' : raw;
+  }
+
+  /// B 站图床支持在地址后拼 @宽x高 取缩略图：
+  /// 原图动辄 1~2MB，这个 72×54 的格子里按原图拉会明显卡顿。
+  static String _thumb(String url, String spec) {
+    if (url.isEmpty || !url.contains('hdslb.com')) return url;
+    if (url.contains('@') || url.contains('?')) return url;
+    return '$url@$spec';
+  }
+
+  Widget _image(String url, {required Widget Function() onError}) {
     return Image.network(
-      normalized,
+      url,
       fit: BoxFit.cover,
       headers: const <String, String>{'Referer': 'https://live.bilibili.com/'},
-      errorBuilder: (_, _, _) => _fallback(context),
+      errorBuilder: (_, _, _) => onError(),
       loadingBuilder:
           (BuildContext context, Widget child, ImageChunkEvent? progress) {
             if (progress == null) return child;
-            return _fallback(context);
+            return ColoredBox(
+              color: context.isDark
+                  ? Colors.white.withValues(alpha: 0.06)
+                  : const Color(0xFFEFF1F8),
+            );
           },
     );
   }
