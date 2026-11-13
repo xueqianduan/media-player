@@ -1,203 +1,202 @@
 // -------------------------------------------------------------------------
-// 功能：直播控制台顶部信息条
+// 功能：直播控制台左上角的来源信息条
 //
 // 主要内容：
-// - 返回按钮
-// - 双源头像（画面源 / 声音源）叠加展示
-// - 房间名、连接状态与启动中的转圈
+// - 返回、双源头像（画面 / 声音）
+// - 标题「画面主播 · 声音主播」与房间号副标题
+// - 原声 / 解说切换
+// - 连接中的状态提示
 // -------------------------------------------------------------------------
 
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../domain/live_models.dart';
+import 'live_source_avatars.dart';
 
-/// 直播控制台顶部信息条。
+/// 画面左上角的来源信息与声音切换。
 class LiveConsoleHeader extends StatelessWidget {
   const LiveConsoleHeader({
     super.key,
     required this.picture,
     required this.voice,
-    required this.status,
+    required this.hint,
     required this.starting,
+    required this.usingVoice,
+    required this.hasVoice,
     required this.onBack,
+    required this.onOfficialSound,
+    required this.onCommentatorSound,
   });
 
   final LiveRoom picture;
   final LiveRoom? voice;
 
-  /// 连接状态或声音源警告，显示在房间名下方。
-  final String status;
+  /// 连接状态或警告；为空时不占位。
+  final String hint;
 
   /// 是否还在建立首路连接。
   final bool starting;
+  final bool usingVoice;
+  final bool hasVoice;
 
   final VoidCallback onBack;
+  final VoidCallback onOfficialSound;
+  final VoidCallback onCommentatorSound;
+
+  String get _title =>
+      voice == null ? picture.name : '${picture.name} · ${voice!.name}';
+
+  String get _subtitle => voice == null
+      ? '画面 ${picture.roomId} · 原声'
+      : '画面 ${picture.roomId} · 声音 ${voice!.roomId}';
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 6, 10, 8),
-      child: Row(
-        children: <Widget>[
-          IconButton(
-            onPressed: onBack,
-            icon: const Icon(
-              Icons.arrow_back_ios_new_rounded,
-              color: Colors.white,
-              size: 19,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            GestureDetector(
+              onTap: onBack,
+              behavior: HitTestBehavior.opaque,
+              child: const SizedBox(
+                width: 30,
+                height: 30,
+                child: Icon(
+                  Icons.arrow_back_ios_new_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
+              ),
             ),
-          ),
-          _SourceAvatars(picture: picture, voice: voice),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(
-                  picture.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w600,
+            const SizedBox(width: 2),
+            LiveSourceAvatars(picture: picture, voice: voice),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    _title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      shadows: <Shadow>[
+                        Shadow(color: Colors.black54, blurRadius: 6),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  status,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white54, fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-          if (starting)
-            const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Colors.white54,
+                  const SizedBox(height: 2),
+                  Text(
+                    _subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white60,
+                      fontSize: 10.5,
+                      shadows: <Shadow>[
+                        Shadow(color: Colors.black54, blurRadius: 6),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
+            if (starting)
+              const SizedBox(
+                width: 13,
+                height: 13,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white54,
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 7),
+        Row(
+          children: <Widget>[
+            _SoundChip(
+              label: '原声',
+              selected: !usingVoice,
+              onTap: onOfficialSound,
+            ),
+            const SizedBox(width: 6),
+            _SoundChip(
+              label: '解说',
+              selected: usingVoice,
+              enabled: hasVoice,
+              onTap: onCommentatorSound,
+            ),
+          ],
+        ),
+        if (hint.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 5),
+          Text(
+            hint,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white38,
+              fontSize: 10,
+              shadows: <Shadow>[Shadow(color: Colors.black54, blurRadius: 6)],
+            ),
+          ),
         ],
-      ),
+      ],
     );
   }
 }
 
-/// 双源头像：左画面、右声音；没有声音源时只显示画面。
-class _SourceAvatars extends StatelessWidget {
-  const _SourceAvatars({required this.picture, this.voice});
-
-  final LiveRoom picture;
-  final LiveRoom? voice;
-
-  @override
-  Widget build(BuildContext context) {
-    final LiveRoom? second = voice;
-    return SizedBox(
-      width: second == null ? 38 : 60,
-      height: 38,
-      child: Stack(
-        children: <Widget>[
-          _SourceAvatar(
-            room: picture,
-            icon: Icons.desktop_windows_rounded,
-            tint: AppColors.primary,
-          ),
-          if (second != null)
-            Positioned(
-              left: 22,
-              child: _SourceAvatar(
-                room: second,
-                icon: Icons.headphones_rounded,
-                tint: const Color(0xFF37C26A),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 单个源头像：圆形头像 + 右下角来源角标，拼在一起表示双路合流。
-class _SourceAvatar extends StatelessWidget {
-  const _SourceAvatar({
-    required this.room,
-    required this.icon,
-    required this.tint,
+/// 原声 / 解说胶囊。
+class _SoundChip extends StatelessWidget {
+  const _SoundChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.enabled = true,
   });
 
-  final LiveRoom room;
-  final IconData icon;
-  final Color tint;
-
-  static const double _size = 38;
+  final String label;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final String raw = room.avatarUrl;
-    final String url = raw.startsWith('//') ? 'https:$raw' : raw;
-    return SizedBox(
-      width: _size,
-      height: _size,
-      child: Stack(
-        children: <Widget>[
-          Container(
-            width: _size,
-            height: _size,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: const Color(0xFF0B0D14), width: 2),
-            ),
-            child: ClipOval(
-              child: url.isEmpty
-                  ? _fallback()
-                  : Image.network(
-                      url,
-                      fit: BoxFit.cover,
-                      headers: const <String, String>{
-                        'Referer': 'https://www.bilibili.com/',
-                      },
-                      errorBuilder: (_, _, _) => _fallback(),
-                    ),
-            ),
+    final Color color = !enabled
+        ? Colors.white24
+        : (selected ? Colors.white : Colors.white70);
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.primary.withValues(alpha: 0.9)
+              : Colors.black.withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(
+            color: selected
+                ? AppColors.primary
+                : Colors.white.withValues(alpha: 0.16),
           ),
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: Container(
-              width: 15,
-              height: 15,
-              decoration: BoxDecoration(
-                color: const Color(0xFF0B0D14),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: tint.withValues(alpha: 0.9),
-                  width: 1,
-                ),
-              ),
-              child: Icon(icon, size: 9, color: tint),
-            ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: color,
+            fontSize: 11.5,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _fallback() {
-    return ColoredBox(
-      color: const Color(0xFF1A1E2A),
-      child: Center(
-        child: Icon(
-          icon,
-          size: _size * 0.4,
-          color: tint.withValues(alpha: 0.85),
         ),
       ),
     );

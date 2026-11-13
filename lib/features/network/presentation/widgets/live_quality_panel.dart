@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../domain/live_models.dart';
+import 'live_side_panel.dart';
 
 /// 画质侧栏：铺满屏幕右侧，左侧空白区域点击即关闭。
 class LiveQualityPanelOverlay extends StatelessWidget {
@@ -31,67 +32,14 @@ class LiveQualityPanelOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Size size = MediaQuery.sizeOf(context);
-    final bool landscape = size.width > size.height;
-    final double baseWidth = landscape
-        ? (size.width * 0.44).clamp(300.0, 460.0).toDouble()
-        : (size.width * 0.68).clamp(250.0, 330.0).toDouble();
-    // 只有一列档位文字，比常规侧栏窄一些。
-    final double panelWidth = baseWidth * 0.62;
-
-    return Stack(
-      children: <Widget>[
-        Positioned(
-          left: 0,
-          top: 0,
-          bottom: 0,
-          right: panelWidth,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: onClose,
-          ),
-        ),
-        Positioned(
-          right: 0,
-          top: 0,
-          bottom: 0,
-          width: panelWidth,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () {},
-            child: DecoratedBox(
-              decoration: const BoxDecoration(
-                color: Color(0xF20A0C12),
-                border: Border(left: BorderSide(color: Color(0x14FFFFFF))),
-              ),
-              child: SafeArea(
-                left: false,
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween<double>(begin: 0, end: 1),
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
-                  builder: (BuildContext context, double value, Widget? child) {
-                    return FractionalTranslation(
-                      translation: Offset((1 - value) * 0.18, 0),
-                      child: Opacity(
-                        opacity: value.clamp(0.0, 1.0),
-                        child: child,
-                      ),
-                    );
-                  },
-                  child: SingleChildScrollView(
-                    child: _QualityList(
-                      options: options,
-                      currentQn: currentQn,
-                      onSelect: onSelect,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
+    return LiveSidePanel(
+      onClose: onClose,
+      widthFactor: 0.62,
+      child: _QualityList(
+        options: options,
+        currentQn: currentQn,
+        onSelect: onSelect,
+      ),
     );
   }
 }

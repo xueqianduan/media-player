@@ -63,6 +63,33 @@ class NetworkRepository {
     return _save(state.copyWith(preset: const LivePreset()));
   }
 
+  /// 收藏一个组合：去重后放到最前。
+  NetworkState savePresetEntry(NetworkState state, LivePreset preset) {
+    if (preset.picture == null) return state;
+    final SavedLivePreset entry = SavedLivePreset(
+      id: '${DateTime.now().microsecondsSinceEpoch}',
+      preset: preset,
+      savedAt: DateTime.now(),
+    );
+    final List<SavedLivePreset> next = <SavedLivePreset>[
+      entry,
+      ...state.savedPresets.where(
+        (SavedLivePreset item) => item.key != entry.key,
+      ),
+    ];
+    return _save(state.copyWith(savedPresets: next));
+  }
+
+  NetworkState removeSavedPreset(NetworkState state, String id) {
+    return _save(
+      state.copyWith(
+        savedPresets: state.savedPresets
+            .where((SavedLivePreset item) => item.id != id)
+            .toList(),
+      ),
+    );
+  }
+
   NetworkState updateFavoriteLive(
     NetworkState state,
     Map<int, bool> liveByRoom,

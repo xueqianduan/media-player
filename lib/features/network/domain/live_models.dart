@@ -179,6 +179,57 @@ class LivePlaylist {
   final int currentQn;
 }
 
+/// 直播进度：用户主动回拖的落后时长 + 可回退窗口。
+///
+/// 直播时缓存会一直领先播放位置，那不是「落后」，进度条应当保持满格。
+/// 这里只记录用户拖动产生的落后量：behind = 0 表示正在看直播。
+class LiveProgress {
+  const LiveProgress({
+    this.position = Duration.zero,
+    this.behind = Duration.zero,
+    this.liveEdge = Duration.zero,
+    this.window = const Duration(seconds: 40),
+  });
+
+  /// 当前播放位置（相对本路流起点），用于换算拖动目标。
+  final Duration position;
+
+  /// 用户主动回拖造成的落后时长，0 表示在直播边缘。
+  final Duration behind;
+
+  /// 缓存末尾的绝对时间，用于「回到直播」定位。
+  final Duration liveEdge;
+
+  /// 可回退的最大窗口。
+  final Duration window;
+
+  bool get available =>
+      liveEdge > const Duration(seconds: 1) && window > Duration.zero;
+
+  /// 进度条比例：直播时恒为 1。
+  double get fraction {
+    if (!available || atLive) return 1;
+    final double value = 1 - behind.inMilliseconds / window.inMilliseconds;
+    return value.clamp(0.0, 1.0);
+  }
+
+  /// 3 秒以内视为直播。
+  bool get atLive => !available || behind <= const Duration(seconds: 3);
+
+  /// 落后时长。
+  Duration get lag => behind;
+
+  /// 把滑块比例换算成绝对跳转位置。
+  Duration targetFor(double value) {
+    final int requestedMs =
+        ((1 - value.clamp(0.0, 1.0)) * window.inMilliseconds).round();
+    final Duration requested = Duration(milliseconds: requestedMs);
+    final Duration delta = behind - requested;
+    final Duration target = position + delta;
+    return target.isNegative ? Duration.zero : target;
+  }
+}
+
 /// 双路观赛组合：画面来源 + 可选声音来源 + 弹幕来源。
 class LivePreset {
   const LivePreset({
@@ -220,6 +271,59 @@ class LivePreset {
       picture: LiveRoom.fromJson(json['picture']),
       voice: LiveRoom.fromJson(json['voice']),
       danmaku: DanmakuSourceX.fromName(json['danmaku'] as String?),
+    );
+  }
+}
+
+/// 收藏的直播组合：画面 + 可选声音 + 弹幕来源。
+class SavedLivePreset {
+  const SavedLivePreset({
+    required this.id,
+    required this.preset,
+    required this.savedAt,
+  });
+
+  final String id;
+  final LivePreset preset;
+  final DateTime savedAt;
+
+  /// 去重键：同一对房间 + 同一弹幕来源只保留一条。
+  String get key => keyOf(preset);
+
+  static String keyOf(LivePreset preset) =>
+      '${preset.picture?.roomId ?? 0}|'
+      '${preset.voice?.roomId ?? 0}|'
+      '${preset.danmaku.name}';
+
+  String get title {
+    final String picture = preset.picture?.name ?? '未知直播间';
+    final String? voice = preset.voice?.name;
+    return voice == null ? picture : '$picture · $voice';
+  }
+
+  String get subtitle {
+    final String picture = '画面 ${preset.picture?.roomId ?? 0}';
+    final String voice = preset.voice == null
+        ? '原声'
+        : '声音 ${preset.voice!.roomId}';
+    return '$picture · $voice · 弹幕 ${preset.danmaku.label}';
+  }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'id': id,
+    'preset': preset.toJson(),
+    'savedAt': savedAt.toIso8601String(),
+  };
+
+  static SavedLivePreset? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final Map<String, dynamic> json = Map<String, dynamic>.from(value);
+    final LivePreset preset = LivePreset.fromJson(json['preset']);
+    if (preset.picture == null) return null;
+    return SavedLivePreset(
+      id: '${json['id'] ?? DateTime.now().microsecondsSinceEpoch}',
+      preset: preset,
+      savedAt: DateTime.tryParse('${json['savedAt']}') ?? DateTime.now(),
     );
   }
 }
@@ -298,11 +402,15 @@ class NetworkState {
   const NetworkState({
     this.favorites = const <LiveFavorite>[],
     this.preset = const LivePreset(),
+    this.savedPresets = const <SavedLivePreset>[],
     this.videos = const <NetworkVideo>[],
   });
 
   final List<LiveFavorite> favorites;
   final LivePreset preset;
+
+  /// 用户主动收藏的直播组合。
+  final List<SavedLivePreset> savedPresets;
   final List<NetworkVideo> videos;
 
   bool isFavorite(int roomId) =>
@@ -311,11 +419,13 @@ class NetworkState {
   NetworkState copyWith({
     List<LiveFavorite>? favorites,
     LivePreset? preset,
+    List<SavedLivePreset>? savedPresets,
     List<NetworkVideo>? videos,
   }) {
     return NetworkState(
       favorites: favorites ?? this.favorites,
       preset: preset ?? this.preset,
+      savedPresets: savedPresets ?? this.savedPresets,
       videos: videos ?? this.videos,
     );
   }
@@ -323,6 +433,9 @@ class NetworkState {
   Map<String, dynamic> toJson() => <String, dynamic>{
     'favorites': favorites.map((LiveFavorite item) => item.toJson()).toList(),
     'preset': preset.toJson(),
+    'savedPresets': savedPresets
+        .map((SavedLivePreset item) => item.toJson())
+        .toList(),
     'videos': videos.map((NetworkVideo item) => item.toJson()).toList(),
   };
 
@@ -348,9 +461,19 @@ class NetworkState {
       }
     }
 
+    final List<SavedLivePreset> savedPresets = <SavedLivePreset>[];
+    final Object? presetRows = json['savedPresets'];
+    if (presetRows is List) {
+      for (final Object? row in presetRows) {
+        final SavedLivePreset? item = SavedLivePreset.fromJson(row);
+        if (item != null) savedPresets.add(item);
+      }
+    }
+
     return NetworkState(
       favorites: favorites,
       preset: LivePreset.fromJson(json['preset']),
+      savedPresets: savedPresets,
       videos: videos,
     );
   }

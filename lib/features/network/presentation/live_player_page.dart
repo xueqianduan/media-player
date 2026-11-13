@@ -26,12 +26,13 @@ import '../application/bili_account_controller.dart';
 import '../application/network_controller.dart';
 import '../data/dual_live_session.dart';
 import '../domain/live_models.dart';
-import 'widgets/live_console_header.dart';
 import 'widgets/live_control_overlay.dart';
+import 'widgets/live_console_header.dart';
 import 'widgets/live_danmaku_panel.dart';
-import 'widgets/live_playback_bar.dart';
+import 'widgets/live_portrait_control_bar.dart';
+import 'widgets/live_progress_bar.dart';
 import 'widgets/live_quality_panel.dart';
-import 'widgets/live_sync_sheet.dart';
+import 'widgets/live_sync_panel.dart';
 
 /// 播放双路直播所需的选择。
 class LivePlayArgs {
@@ -79,6 +80,9 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
   /// 画质面板是否从右侧展开。
   bool _qualityOpen = false;
 
+  /// 同步面板是否从右侧展开。
+  bool _syncOpen = false;
+
   // ===== 亮度 / 音量手势状态（与本地播放器一致） =====
   double _brightness = 1;
   double _volume = 1;
@@ -113,6 +117,9 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
       previous.usingVoice.removeListener(_onSoundChanged);
       previous.paused.removeListener(_onPausedChanged);
       previous.currentQn.removeListener(_onQnChanged);
+      // 先摘掉会话再关闭：close() 会释放进度通知器，
+      // 页面上的 ValueListenableBuilder 必须先退订。
+      if (mounted) setState(() => _session = null);
       await previous.close();
     }
 
@@ -182,7 +189,13 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
 
   void _onStatus() {
     if (!mounted) return;
-    setState(() => _status = _session?.status.value ?? '');
+    final DualLiveSession? session = _session;
+    setState(() {
+      _status = session?.status.value ?? '';
+      if (session?.voiceFailure != null) {
+        _voiceWarning = '声音源不可用，继续使用赛事原声';
+      }
+    });
   }
 
   void _onSoundChanged() {
@@ -377,6 +390,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
     _hideTimer?.cancel();
     setState(() {
       _qualityOpen = true;
+      _syncOpen = false;
       _controlsVisible = true;
     });
   }
@@ -405,7 +419,6 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
     setState(() => _refreshing = true);
     try {
       await session.refreshPicture();
-      if (mounted) showToast(context, '画面源已刷新');
     } on Object catch (error) {
       if (mounted) showToast(context, '$error');
     } finally {
@@ -413,25 +426,21 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
     }
   }
 
-  Future<void> _showSyncSheet() async {
+  void _openSyncPanel() {
     final DualLiveSession? session = _session;
     if (session == null) return;
+    _hideTimer?.cancel();
+    setState(() {
+      _syncOpen = true;
+      _qualityOpen = false;
+      _controlsVisible = true;
+    });
+  }
 
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF16181F),
-      builder: (BuildContext sheetContext) {
-        return LiveSyncSheet(
-          session: session,
-          onRestart: () {
-            Navigator.of(sheetContext).pop();
-            _start();
-          },
-        );
-      },
-    );
-    if (mounted) setState(() {});
+  void _closeSyncPanel() {
+    if (!_syncOpen) return;
+    setState(() => _syncOpen = false);
+    _scheduleHide();
   }
 
   @override
@@ -469,10 +478,14 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
   // ===== 页面骨架 =====
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: !_landscape && !_qualityOpen,
+      canPop: !_landscape && !_qualityOpen && !_syncOpen,
       onPopInvokedWithResult: (bool didPop, Object? result) {
         if (didPop) return;
         // 面板打开时返回键先收起面板；横屏时先退出全屏，都不是直接离开播放页。
+        if (_syncOpen) {
+          _closeSyncPanel();
+          return;
+        }
         if (_qualityOpen) {
           _closeQualityPanel();
           return;
@@ -486,6 +499,17 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
             _landscape
                 ? _buildLandscape(context)
                 : SafeArea(child: _buildPortrait(context)),
+            if (_syncOpen && _session != null)
+              Positioned.fill(
+                child: LiveSyncPanel(
+                  session: _session!,
+                  onClose: _closeSyncPanel,
+                  onRestart: () {
+                    _closeSyncPanel();
+                    _start();
+                  },
+                ),
+              ),
             if (_qualityOpen)
               Positioned.fill(
                 child: LiveQualityPanelOverlay(
@@ -504,24 +528,26 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
     );
   }
 
-  // ===== 竖屏：头部 / 画面 / 播放按钮 / 弹幕 / 输入栏 =====
+  // ===== 竖屏：信息条 / 画面（底部控制条）/ 弹幕 / 输入栏 =====
   Widget _buildPortrait(BuildContext context) {
+    final DualLiveSession? session = _session;
     return Column(
       children: <Widget>[
-        LiveConsoleHeader(
-          picture: widget.args.picture,
-          voice: widget.args.voice,
-          status: _voiceWarning ?? _status,
-          starting: _starting,
-          onBack: () => context.canPop() ? context.pop() : context.go('/'),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+          child: LiveConsoleHeader(
+            picture: widget.args.picture,
+            voice: widget.args.voice,
+            hint: _error ?? _voiceWarning ?? (_starting ? _status : ''),
+            starting: _starting,
+            usingVoice: _usingVoice,
+            hasVoice: session?.hasVoice ?? false,
+            onBack: () => context.canPop() ? context.pop() : context.go('/'),
+            onOfficialSound: () => _switchSound(official: true),
+            onCommentatorSound: () => _switchSound(official: false),
+          ),
         ),
         _buildVideoStage(context),
-        LivePlaybackBar(
-          paused: _paused,
-          refreshing: _refreshing,
-          onTogglePause: _togglePause,
-          onRefresh: _refreshPicture,
-        ),
         Expanded(child: LiveDanmakuPanel(source: widget.args.danmaku)),
         LiveDanmakuInputBar(onTap: _showDanmakuComingSoon),
       ],
@@ -542,10 +568,48 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
             child: _buildVideo(BoxFit.contain),
           ),
         ),
-        if (_controlsVisible) _buildOverlay(),
+        if (_controlsVisible) _buildOverlay(context),
+        if (_controlsVisible)
+          Positioned(left: 0, right: 0, bottom: 48, child: _buildProgress()),
         _buildGestureHint(),
       ],
     );
+  }
+
+  /// 进度条：没有会话时占位同样高度，避免布局跳动。
+  Widget _buildProgress() {
+    final DualLiveSession? session = _session;
+    if (session == null) return const SizedBox(height: 34);
+    return ValueListenableBuilder<LiveProgress>(
+      valueListenable: session.progress,
+      builder: (BuildContext context, LiveProgress progress, Widget? child) {
+        return LiveProgressBar(
+          progress: progress,
+          onSeek: _seekTo,
+          onGoLive: _goLive,
+        );
+      },
+    );
+  }
+
+  Future<void> _seekTo(Duration target) async {
+    final DualLiveSession? session = _session;
+    if (session == null) return;
+    try {
+      await session.seekTo(target);
+    } on Object catch (error) {
+      if (mounted) showToast(context, '$error');
+    }
+  }
+
+  Future<void> _goLive() async {
+    final DualLiveSession? session = _session;
+    if (session == null) return;
+    try {
+      await session.goLive();
+    } on Object catch (error) {
+      if (mounted) showToast(context, '$error');
+    }
   }
 
   Widget _buildVideo(BoxFit fit) {
@@ -560,30 +624,98 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
   }
 
   /// 画面区：固定 16:9，点一下呼出 / 收起控制层。
+  ///
+  /// 底部工具条放在亮度/音量手势层之外，避免拖动进度条时与纵向手势抢事件。
   Widget _buildVideoStage(BuildContext context) {
     return AspectRatio(
       aspectRatio: 16 / 9,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: _toggleControls,
-        onVerticalDragStart: _onVerticalStart,
-        onVerticalDragUpdate: _onVerticalUpdate,
-        child: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            ColoredBox(color: Colors.black, child: _buildVideo(BoxFit.contain)),
-            if (_controlsVisible) _buildOverlay(),
-            _buildGestureHint(),
-          ],
+      child: Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _toggleControls,
+            onVerticalDragStart: _onVerticalStart,
+            onVerticalDragUpdate: _onVerticalUpdate,
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                ColoredBox(
+                  color: Colors.black,
+                  child: _buildVideo(BoxFit.contain),
+                ),
+                _buildGestureHint(),
+              ],
+            ),
+          ),
+          if (_controlsVisible)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: _buildPortraitOverlay(),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 竖屏画面底部：暂停、进度、横屏。
+  Widget _buildPortraitOverlay() {
+    final DualLiveSession? session = _session;
+    if (session == null) {
+      return Align(
+        alignment: Alignment.bottomCenter,
+        child: LivePortraitControlBar(
+          progress: const LiveProgress(),
+          paused: _paused,
+          ready: false,
+          onTogglePause: _togglePause,
+          onSeek: _seekTo,
+          onGoLive: _goLive,
+          onToggleFullscreen: _toggleOrientation,
         ),
+      );
+    }
+
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: ValueListenableBuilder<LiveProgress>(
+        valueListenable: session.progress,
+        builder: (BuildContext context, LiveProgress progress, Widget? child) {
+          return LivePortraitControlBar(
+            progress: progress,
+            paused: _paused,
+            ready: _controller != null,
+            onTogglePause: _togglePause,
+            onSeek: _seekTo,
+            onGoLive: _goLive,
+            onToggleFullscreen: _toggleOrientation,
+          );
+        },
       ),
     );
   }
 
   /// 画面控制层：具体摆放交给 [LiveControlOverlay]，这里只接线。
-  Widget _buildOverlay() {
+  Widget _buildOverlay(BuildContext context) {
     final DualLiveSession? session = _session;
     return LiveControlOverlay(
+      picture: widget.args.picture,
+      voice: widget.args.voice,
+      hint: _error ?? _voiceWarning ?? (_starting ? _status : ''),
+      starting: _starting,
+      onBack: () {
+        if (_landscape) {
+          _toggleOrientation();
+          return;
+        }
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/');
+        }
+      },
       landscape: _landscape,
       paused: _paused,
       usingVoice: _usingVoice,
@@ -595,7 +727,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
       qualityLabel: LiveQuality.labelOf(_qn),
       onTogglePause: _togglePause,
       onRefresh: _refreshPicture,
-      onSync: _showSyncSheet,
+      onSync: _openSyncPanel,
       onQuality: _openQualityPanel,
       onToggleFullscreen: _toggleOrientation,
       onOfficialSound: () => _switchSound(official: true),

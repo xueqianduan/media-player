@@ -50,6 +50,25 @@ class DualLiveSession {
 
   int _requestedQn = 250;
 
+  /// 画面进度：缓存窗口内的当前位置与直播边缘。
+  final ValueNotifier<LiveProgress> progress = ValueNotifier<LiveProgress>(
+    const LiveProgress(),
+  );
+
+  Timer? _progressTimer;
+  Duration _liveEdge = Duration.zero;
+
+  /// 用户主动回拖造成的落后量；0 表示正在看直播。
+  Duration _behind = Duration.zero;
+
+  /// 进度条可回退的窗口，初始 40 秒，随后按实际 demuxer 缓存增长。
+  Duration _window = const Duration(seconds: 40);
+
+  /// seek 进行中：暂停进度刷新，避免 ticker 用旧位置把滑块拉回去。
+  bool _seeking = false;
+
+  int _progressTicks = 0;
+
   /// 单路连接的总预算：两轮取流 + 若干候选，超过就放弃，避免无限加载。
   static const Duration _connectBudget = Duration(seconds: 30);
 
@@ -87,6 +106,177 @@ class DualLiveSession {
     // 保留本次异常，但不要让操作队列永久失效。
     _tail = next.catchError((Object _) {});
     return next;
+  }
+
+  // ------------------------------------------------------------------ 进度
+
+  void _startProgressTicker() {
+    _progressTimer?.cancel();
+    _progressTimer = Timer.periodic(
+      const Duration(milliseconds: 500),
+      (Timer _) => _updateProgress(),
+    );
+  }
+
+  void _updateProgress() {
+    final LiveLeg? video = picture;
+    if (_closed || video == null || _seeking) return;
+    final Duration position = video.player.state.position;
+    // media_kit 的 state.buffer 来自 mpv 的 demuxer-cache-time，
+    // 表示「缓存末尾的绝对时间」，直接就是直播边缘，不能再加 position。
+    final Duration edge = video.player.state.buffer;
+    if (edge <= Duration.zero) return;
+    if (edge > _liveEdge) _liveEdge = edge;
+    progress.value = LiveProgress(
+      position: position,
+      behind: _behind,
+      liveEdge: _liveEdge,
+      window: _window,
+    );
+
+    _progressTicks++;
+    if (_progressTicks % 6 == 0) {
+      unawaited(_refreshWindow(video));
+    }
+  }
+
+  /// 按实际 demuxer 缓存调整可回退窗口（最多 10 分钟）。
+  Future<void> _refreshWindow(LiveLeg video) async {
+    final String? raw = await video.property('demuxer-cache-duration');
+    final double? seconds = double.tryParse(raw ?? '');
+    if (seconds == null || seconds <= 1) return;
+    final Duration next = Duration(milliseconds: (seconds * 1000).round());
+    if (next <= _window) return;
+    _window = next > const Duration(minutes: 10)
+        ? const Duration(minutes: 10)
+        : next;
+  }
+
+  void _resetProgress() {
+    _liveEdge = Duration.zero;
+    _behind = Duration.zero;
+    _window = const Duration(seconds: 40);
+    _progressTicks = 0;
+    _seeking = false;
+    if (!_closed) progress.value = const LiveProgress();
+  }
+
+  /// 在缓存窗口内跳转。使用解说时，声音那一路按相同偏移跟随。
+  Future<void> seekTo(Duration target) => _seekBoth(target, resetBehind: false);
+
+  /// 回到直播边缘（留 1.5 秒余量）。
+  Future<void> goLive() {
+    if (_liveEdge <= const Duration(seconds: 1)) {
+      return Future<void>.error(StateError('还没有可回到的直播位置'));
+    }
+    final Duration target = _liveEdge - const Duration(milliseconds: 300);
+    return _seekBoth(
+      target > Duration.zero ? target : Duration.zero,
+      resetBehind: true,
+    );
+  }
+
+  Future<void> _seekBoth(Duration target, {required bool resetBehind}) {
+    return _run(() async {
+      final LiveLeg? video = picture;
+      if (video == null) throw StateError('画面源尚未连接');
+
+      Duration clamped = target;
+      final Duration maxTarget = _liveEdge > const Duration(seconds: 1)
+          ? _liveEdge - const Duration(milliseconds: 300)
+          : Duration.zero;
+      if (maxTarget > Duration.zero && clamped > maxTarget) {
+        clamped = maxTarget;
+      }
+      if (clamped < Duration.zero) clamped = Duration.zero;
+
+      final Duration current = video.player.state.position;
+      // 正数表示往回拖，负数表示往前追。
+      final Duration delta = current - clamped;
+      final Duration previousBehind = _behind;
+
+      // 先把状态改到位再 seek：seek 期间 ticker 会被 _seeking 挡住，
+      // 不会出现「松手后滑块又跳回原位」。
+      Duration nextBehind;
+      if (resetBehind) {
+        nextBehind = Duration.zero;
+      } else {
+        nextBehind = _behind + delta;
+        if (nextBehind < Duration.zero) nextBehind = Duration.zero;
+        if (nextBehind > _window) nextBehind = _window;
+      }
+      _seeking = true;
+      _behind = nextBehind;
+      progress.value = LiveProgress(
+        position: clamped,
+        behind: _behind,
+        liveEdge: _liveEdge,
+        window: _window,
+      );
+
+      final bool wasPaused = paused.value;
+      try {
+        // exact：避免落到几秒前的关键帧，回到直播后更接近真实直播点。
+        // 个别线路不支持精确 seek 时退回普通的 absolute seek。
+        try {
+          await video.seekExact(clamped);
+        } on Object catch (error) {
+          debugPrint('[LumiPlayer] exact seek failed, fallback: $error');
+          await video.player.seek(clamped);
+        }
+
+        final LiveLeg? audio = voice;
+        if (audio != null && usingVoice.value) {
+          final Duration audioTarget = audio.player.state.position - delta;
+          if (audioTarget >= Duration.zero) {
+            await audio.player.seek(audioTarget);
+          }
+        }
+
+        // 回到直播后再按最新缓存末尾校正一次：
+        // mpv 可能落到关键帧或缓存末尾之前，这里补一次精确 seek。
+        if (resetBehind) {
+          await Future<void>.delayed(const Duration(milliseconds: 600));
+          final double? edgeSeconds = double.tryParse(
+            await video.property('demuxer-cache-time') ?? '',
+          );
+          if (edgeSeconds != null && edgeSeconds > 0) {
+            final Duration edge = Duration(
+              milliseconds: (edgeSeconds * 1000).round(),
+            );
+            final Duration actual = video.player.state.position;
+            if (edge - actual > const Duration(seconds: 3)) {
+              final Duration snap = edge - const Duration(milliseconds: 300);
+              debugPrint(
+                '[LumiPlayer] goLive snap '
+                '${actual.inMilliseconds}ms -> ${snap.inMilliseconds}ms',
+              );
+              try {
+                await video.seekExact(snap);
+              } on Object catch (error) {
+                debugPrint('[LumiPlayer] goLive snap failed: $error');
+              }
+            }
+          }
+        }
+
+        // 回到直播时如果处于暂停，顺手恢复播放。
+        if (resetBehind && wasPaused) {
+          for (final LiveLeg? leg in <LiveLeg?>[video, audio]) {
+            if (leg != null) await leg.player.play();
+          }
+          paused.value = false;
+        }
+      } on Object {
+        // seek 失败时回滚落后量，避免滑块显示与画面不一致。
+        _behind = previousBehind;
+        rethrow;
+      } finally {
+        _seeking = false;
+        _updateProgress();
+      }
+      if (resetBehind) _message('已回到直播');
+    });
   }
 
   Future<LiveLeg> _connect(
@@ -208,6 +398,7 @@ class DualLiveSession {
         picture = await _connect(pictureRoom, asPicture: true);
         // 画面一就绪就先播原声，不等解说。
         await _applySound(official: true);
+        _startProgressTicker();
         _checkOpen();
         debugPrint(
           '[LumiPlayer] live picture started in ${watch.elapsedMilliseconds}ms',
@@ -301,11 +492,12 @@ class DualLiveSession {
 
       await _connect(room, asPicture: true);
       _checkOpen();
-      // 新流从当前直播点开始，旧同步偏移不再成立。
+      // 新流从当前直播点开始，旧同步偏移与进度窗口都不再成立。
       pictureDelay = Duration.zero;
+      _resetProgress();
       await _applySound(official: voice == null || !usingVoice.value);
       if (paused.value) await picture?.player.pause();
-      _message('画面源已刷新');
+      _message('直播中');
     });
   }
 
@@ -337,8 +529,9 @@ class DualLiveSession {
       }
 
       _checkOpen();
-      // 新流从当前直播点开始，旧同步偏移不再成立。
+      // 新流从当前直播点开始，旧同步偏移与进度窗口都不再成立。
       pictureDelay = Duration.zero;
+      _resetProgress();
       await _applySound(official: voice == null || !usingVoice.value);
       if (paused.value) await picture?.player.pause();
       _message('画质：${LiveQuality.labelOf(currentQn.value)}');
@@ -379,8 +572,11 @@ class DualLiveSession {
   }) async {
     final LiveLeg? video = picture;
     final LiveLeg? audio = voice;
-    if (video == null || audio == null) {
-      throw StateError('两路连接完成后才能校准');
+    if (video == null) {
+      throw StateError('画面源尚未连接');
+    }
+    if (audio == null) {
+      throw StateError('还没有声音源，先在首页选择「声音来源」');
     }
     if (amount <= Duration.zero || amount > const Duration(seconds: 5)) {
       throw ArgumentError('单次调整应在 0～5 秒之间');
@@ -392,9 +588,26 @@ class DualLiveSession {
     if (accumulated + amount > const Duration(seconds: 30)) {
       throw StateError('已达到延迟上限，请重新连接后再校准');
     }
-    if (!reference.player.state.playing || reference.player.state.buffering) {
-      throw StateError('另一路尚未稳定播放，请稍后再调整');
+    if (paused.value) {
+      throw StateError('暂停状态下不能校准，请先继续播放');
     }
+
+    // 直播刚起播或换线时，另一路可能还在缓冲：等最多 3 秒再判定失败，
+    // 而不是一上来就报「尚未稳定播放」。
+    final Stopwatch readyWatch = Stopwatch()..start();
+    while (reference.player.state.buffering ||
+        !reference.player.state.playing) {
+      _checkOpen();
+      if (readyWatch.elapsed > const Duration(seconds: 3)) {
+        throw StateError('另一路还没准备好，请等画面与声音都播放后再试');
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+
+    debugPrint(
+      '[LumiPlayer] sync start ${pictureSide ? 'picture' : 'voice'} '
+      '+${amount.inMilliseconds}ms',
+    );
 
     await held.player.pause();
     final Duration heldPosition = held.player.state.position;
@@ -418,16 +631,17 @@ class DualLiveSession {
         }
         await Future<void>.delayed(const Duration(milliseconds: 100));
       }
-      // 暂停期间缓存是否还有剩余：能读到缓存时间才校验，读不到就跳过，
-      // 避免把不支持该属性的机型误判为失败。
+
+      // 缓存时间只做诊断记录，不再作为失败条件：
+      // 直播的 demuxer-cache-time 语义随线路不同，误判过一次就直接报错。
       final double? cacheEnd = double.tryParse(
         await held.property('demuxer-cache-time') ?? '',
       );
       final double positionSeconds =
           heldPosition.inMicroseconds / Duration.microsecondsPerSecond;
-      if (cacheEnd != null && cacheEnd > 0 && cacheEnd <= positionSeconds) {
-        throw StateError('该线路没有保留有效缓存，无法确认同步调整');
-      }
+      debugPrint(
+        '[LumiPlayer] sync cache-end=$cacheEnd held=${positionSeconds.toStringAsFixed(1)}s',
+      );
     } finally {
       if (!_closed) await held.player.play();
     }
@@ -437,6 +651,11 @@ class DualLiveSession {
     } else {
       voiceDelay += added;
     }
+    debugPrint(
+      '[LumiPlayer] sync done added=${added.inMilliseconds}ms '
+      'picture=${pictureDelay.inMilliseconds}ms '
+      'voice=${voiceDelay.inMilliseconds}ms',
+    );
     _message('画面延迟 ${_seconds(pictureDelay)}s，声音延迟 ${_seconds(voiceDelay)}s');
   }
 
@@ -446,6 +665,8 @@ class DualLiveSession {
   // ------------------------------------------------------------------ 生命周期
 
   Future<void> _release() async {
+    _progressTimer?.cancel();
+    _resetProgress();
     if (!_closed) onVideo?.call(null);
     await Future.wait(
       _owned.toList().map(
@@ -473,5 +694,6 @@ class DualLiveSession {
     paused.dispose();
     currentQn.dispose();
     qualities.dispose();
+    progress.dispose();
   }
 }

@@ -165,6 +165,21 @@ class LiveLeg {
     throw StateError('播放器已关闭');
   }
 
+  /// 精确跳转：默认的 [Player.seek] 是 `absolute`（按关键帧），
+  /// 直播里会落到几秒前的关键帧，表现为「回到了直播但画面还是旧的」。
+  Future<void> seekExact(Duration position) async {
+    final NativePlayer? native = _native;
+    if (native == null) {
+      await player.seek(position);
+      return;
+    }
+    await native.command(<String>[
+      'seek',
+      (position.inMilliseconds / 1000).toStringAsFixed(3),
+      'absolute+exact',
+    ]);
+  }
+
   Future<void> close() => _closing ??= _close();
 
   Future<void> _close() async {

@@ -45,8 +45,20 @@ class NetworkController extends Notifier<NetworkState> {
     state = _repository.removeFavorite(state, roomId);
   }
 
-  void savePreset(LivePreset preset) {
+  /// 保存组合：更新「上次使用」并加入收藏组合。
+  ///
+  /// 返回 false 表示这个组合已经在收藏里，只会把它移到最前。
+  bool savePreset(LivePreset preset) {
+    final bool exists = state.savedPresets.any(
+      (SavedLivePreset item) => item.key == SavedLivePreset.keyOf(preset),
+    );
     state = _repository.setPreset(state, preset);
+    state = _repository.savePresetEntry(state, preset);
+    return !exists;
+  }
+
+  void removeSavedPreset(String id) {
+    state = _repository.removeSavedPreset(state, id);
   }
 
   void clearPreset() {

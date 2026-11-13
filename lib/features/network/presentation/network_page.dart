@@ -23,6 +23,7 @@ import 'bili_account_sheet.dart';
 import 'bili_login_page.dart';
 import 'live_player_page.dart';
 import 'live_search_page.dart';
+import 'widgets/live_source_avatars.dart';
 
 /// 网络模块：B 站直播搜索、双路观赛、收藏与网络视频直链。
 class NetworkPage extends ConsumerStatefulWidget {
@@ -95,12 +96,28 @@ class _NetworkPageState extends ConsumerState<NetworkPage> {
       showToast(context, '先选择画面来源再保存');
       return;
     }
-    ref
+    final bool added = ref
         .read(networkControllerProvider.notifier)
         .savePreset(
           LivePreset(picture: _picture, voice: _voice, danmaku: _danmaku),
         );
-    showToast(context, '已保存组合');
+    showToast(context, added ? '已保存到「我的组合」' : '这个组合已在收藏里，已移到最前');
+  }
+
+  /// 直接播放收藏的组合。
+  void _playPreset(SavedLivePreset entry) {
+    final LivePreset preset = entry.preset;
+    final LiveRoom? picture = preset.picture;
+    if (picture == null) {
+      showToast(context, '这个组合缺少画面来源');
+      return;
+    }
+    setState(() {
+      _picture = picture;
+      _voice = preset.voice;
+      _danmaku = preset.danmaku;
+    });
+    _startWatch(picture: picture, voice: preset.voice);
   }
 
   // ------------------------------------------------------------------ 添加链接
@@ -394,6 +411,23 @@ class _NetworkPageState extends ConsumerState<NetworkPage> {
   List<Widget> _buildLiveTab(BuildContext context, NetworkState network) {
     return <Widget>[
       _buildDualCard(context),
+      if (network.savedPresets.isNotEmpty) ...<Widget>[
+        SectionHeader(
+          title: '我的组合  ${network.savedPresets.length}',
+          padding: const EdgeInsets.fromLTRB(2, 22, 2, 10),
+        ),
+        for (final SavedLivePreset preset in network.savedPresets)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _PresetCard(
+              entry: preset,
+              onPlay: () => _playPreset(preset),
+              onDelete: () => ref
+                  .read(networkControllerProvider.notifier)
+                  .removeSavedPreset(preset.id),
+            ),
+          ),
+      ],
       SectionHeader(
         title: '我的收藏  ${network.favorites.length}',
         actionLabel: network.favorites.isEmpty
@@ -1225,6 +1259,85 @@ class _BiliAccountCard extends ConsumerWidget {
 }
 
 /// 收藏卡片：直播间显示封面 + 播放入口，主播显示头像图标 + 更多菜单。
+/// 收藏的直播组合：双源头像 + 房间信息，点击直接观看。
+class _PresetCard extends StatelessWidget {
+  const _PresetCard({
+    required this.entry,
+    required this.onPlay,
+    required this.onDelete,
+  });
+
+  final SavedLivePreset entry;
+  final VoidCallback onPlay;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final LivePreset preset = entry.preset;
+    return AppCard(
+      padding: const EdgeInsets.all(10),
+      onTap: onPlay,
+      child: Row(
+        children: <Widget>[
+          LiveSourceAvatars(picture: preset.picture, voice: preset.voice),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  entry.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: context.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  entry.subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    color: context.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 6),
+          GestureDetector(
+            onTap: onPlay,
+            behavior: HitTestBehavior.opaque,
+            child: const Padding(
+              padding: EdgeInsets.all(4),
+              child: Icon(
+                Icons.play_circle_fill_rounded,
+                size: 24,
+                color: AppColors.primary,
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: onDelete,
+            tooltip: '删除组合',
+            visualDensity: VisualDensity.compact,
+            icon: Icon(
+              Icons.close_rounded,
+              size: 17,
+              color: context.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _FavoriteCard extends StatelessWidget {
   const _FavoriteCard({
     required this.favorite,
