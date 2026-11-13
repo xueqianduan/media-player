@@ -26,6 +26,12 @@ import '../application/bili_account_controller.dart';
 import '../application/network_controller.dart';
 import '../data/dual_live_session.dart';
 import '../domain/live_models.dart';
+import 'widgets/live_console_header.dart';
+import 'widgets/live_control_overlay.dart';
+import 'widgets/live_danmaku_panel.dart';
+import 'widgets/live_playback_bar.dart';
+import 'widgets/live_quality_panel.dart';
+import 'widgets/live_sync_sheet.dart';
 
 /// 播放双路直播所需的选择。
 class LivePlayArgs {
@@ -381,119 +387,6 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
     _scheduleHide();
   }
 
-  /// 面板铺满屏幕右侧：点左侧空白关闭，右侧一列档位。
-  Widget _buildQualityPanelOverlay() {
-    final Size size = MediaQuery.sizeOf(context);
-    final bool landscape = size.width > size.height;
-    final double baseWidth = landscape
-        ? (size.width * 0.44).clamp(300.0, 460.0).toDouble()
-        : (size.width * 0.68).clamp(250.0, 330.0).toDouble();
-    // 只有一列档位文字，比常规侧栏窄一些。
-    final double panelWidth = baseWidth * 0.62;
-
-    return Stack(
-      children: <Widget>[
-        Positioned(
-          left: 0,
-          top: 0,
-          bottom: 0,
-          right: panelWidth,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _closeQualityPanel,
-          ),
-        ),
-        Positioned(
-          right: 0,
-          top: 0,
-          bottom: 0,
-          width: panelWidth,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () {},
-            child: DecoratedBox(
-              decoration: const BoxDecoration(
-                color: Color(0xF20A0C12),
-                border: Border(left: BorderSide(color: Color(0x14FFFFFF))),
-              ),
-              child: SafeArea(
-                left: false,
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween<double>(begin: 0, end: 1),
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
-                  builder: (BuildContext context, double value, Widget? child) {
-                    return FractionalTranslation(
-                      translation: Offset((1 - value) * 0.18, 0),
-                      child: Opacity(
-                        opacity: value.clamp(0.0, 1.0),
-                        child: child,
-                      ),
-                    );
-                  },
-                  child: SingleChildScrollView(child: _buildQualityPanel()),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// 画质档位：右侧竖向排列，每档一个整行矩形，文字横纵居中。
-  Widget _buildQualityPanel() {
-    final DualLiveSession? session = _session;
-    final List<LiveQuality> options =
-        session?.qualities.value ?? const <LiveQuality>[];
-    final int current = session?.currentQn.value ?? _qn;
-    final bool compact = MediaQuery.sizeOf(context).height < 520;
-    final double rowHeight = compact ? 40 : 51;
-
-    return Padding(
-      padding: compact
-          ? const EdgeInsets.fromLTRB(6, 6, 6, 10)
-          : const EdgeInsets.fromLTRB(8, 8, 8, 14),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          for (final LiveQuality option in options)
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () {
-                _closeQualityPanel();
-                _switchQuality(option.qn);
-              },
-              child: Container(
-                height: rowHeight,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: option.qn == current
-                      ? AppColors.primary
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  option.label,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: option.qn == current ? Colors.white : Colors.white70,
-                    fontSize: compact ? 15 : 18.5,
-                    fontWeight: option.qn == current
-                        ? FontWeight.w600
-                        : FontWeight.w400,
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _switchQuality(int qn) async {
     final DualLiveSession? session = _session;
     if (session == null) return;
@@ -502,6 +395,21 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
       await session.switchQuality(qn);
     } on Object catch (error) {
       if (mounted) showToast(context, '$error');
+    }
+  }
+
+  /// 刷新画面源：只重连画面，声音源与解说选择保留。
+  Future<void> _refreshPicture() async {
+    final DualLiveSession? session = _session;
+    if (session == null || _refreshing) return;
+    setState(() => _refreshing = true);
+    try {
+      await session.refreshPicture();
+      if (mounted) showToast(context, '画面源已刷新');
+    } on Object catch (error) {
+      if (mounted) showToast(context, '$error');
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
     }
   }
 
@@ -514,7 +422,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
       isScrollControlled: true,
       backgroundColor: const Color(0xFF16181F),
       builder: (BuildContext sheetContext) {
-        return _SyncSheet(
+        return LiveSyncSheet(
           session: session,
           onRestart: () {
             Navigator.of(sheetContext).pop();
@@ -579,7 +487,17 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
                 ? _buildLandscape(context)
                 : SafeArea(child: _buildPortrait(context)),
             if (_qualityOpen)
-              Positioned.fill(child: _buildQualityPanelOverlay()),
+              Positioned.fill(
+                child: LiveQualityPanelOverlay(
+                  options: _session?.qualities.value ?? const <LiveQuality>[],
+                  currentQn: _session?.currentQn.value ?? _qn,
+                  onSelect: (int qn) {
+                    _closeQualityPanel();
+                    _switchQuality(qn);
+                  },
+                  onClose: _closeQualityPanel,
+                ),
+              ),
           ],
         ),
       ),
@@ -590,11 +508,22 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
   Widget _buildPortrait(BuildContext context) {
     return Column(
       children: <Widget>[
-        _buildHeader(context),
+        LiveConsoleHeader(
+          picture: widget.args.picture,
+          voice: widget.args.voice,
+          status: _voiceWarning ?? _status,
+          starting: _starting,
+          onBack: () => context.canPop() ? context.pop() : context.go('/'),
+        ),
         _buildVideoStage(context),
-        _buildPlaybackBar(context),
-        Expanded(child: _buildDanmakuPanel(context)),
-        _buildDanmakuInput(context),
+        LivePlaybackBar(
+          paused: _paused,
+          refreshing: _refreshing,
+          onTogglePause: _togglePause,
+          onRefresh: _refreshPicture,
+        ),
+        Expanded(child: LiveDanmakuPanel(source: widget.args.danmaku)),
+        LiveDanmakuInputBar(onTap: _showDanmakuComingSoon),
       ],
     );
   }
@@ -613,7 +542,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
             child: _buildVideo(BoxFit.contain),
           ),
         ),
-        if (_controlsVisible) _buildOverlay(context),
+        if (_controlsVisible) _buildOverlay(),
         _buildGestureHint(),
       ],
     );
@@ -643,7 +572,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
           fit: StackFit.expand,
           children: <Widget>[
             ColoredBox(color: Colors.black, child: _buildVideo(BoxFit.contain)),
-            if (_controlsVisible) _buildOverlay(context),
+            if (_controlsVisible) _buildOverlay(),
             _buildGestureHint(),
           ],
         ),
@@ -651,148 +580,27 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
     );
   }
 
-  /// 画面控制层：左上原声 / 解说，左下同步（横屏时补上暂停与刷新），
-  /// 右下画质与横屏。
-  Widget _buildOverlay(BuildContext context) {
+  /// 画面控制层：具体摆放交给 [LiveControlOverlay]，这里只接线。
+  Widget _buildOverlay() {
     final DualLiveSession? session = _session;
-    final bool hasVoice = session?.hasVoice ?? false;
-    final bool ready = session != null && _controller != null;
-    final bool hasQuality =
-        (session?.qualities.value ?? const <LiveQuality>[]).isNotEmpty;
-    return Stack(
-      fit: StackFit.expand,
-      children: <Widget>[
-        IgnorePointer(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: <Color>[
-                  Colors.black.withValues(alpha: 0.42),
-                  Colors.transparent,
-                  Colors.black.withValues(alpha: 0.55),
-                ],
-                stops: const <double>[0, 0.45, 1],
-              ),
-            ),
-          ),
-        ),
-        Positioned(
-          left: 8,
-          top: 8,
-          child: Row(
-            children: <Widget>[
-              _SoundChip(
-                label: '原声',
-                selected: !_usingVoice,
-                onTap: () => _switchSound(official: true),
-              ),
-              const SizedBox(width: 6),
-              _SoundChip(
-                label: '解说',
-                selected: _usingVoice,
-                enabled: hasVoice,
-                onTap: () => _switchSound(official: false),
-              ),
-            ],
-          ),
-        ),
-        Positioned(
-          left: 8,
-          bottom: 8,
-          child: Row(
-            children: <Widget>[
-              if (_landscape) ...<Widget>[
-                _OverlayIconButton(
-                  icon: _paused
-                      ? Icons.play_arrow_rounded
-                      : Icons.pause_rounded,
-                  onTap: ready ? _togglePause : null,
-                  filled: true,
-                ),
-                const SizedBox(width: 6),
-                _OverlayIconButton(
-                  icon: Icons.refresh_rounded,
-                  onTap: _refreshing ? null : _refreshPicture,
-                  tooltip: '刷新画面源',
-                ),
-                const SizedBox(width: 6),
-              ],
-              _OverlayIconButton(
-                icon: Icons.tune_rounded,
-                onTap: hasVoice ? _showSyncSheet : null,
-                tooltip: '同步',
-              ),
-            ],
-          ),
-        ),
-        Positioned(
-          right: 8,
-          bottom: 8,
-          child: Row(
-            children: <Widget>[
-              if (hasQuality) ...<Widget>[
-                _QualityChip(
-                  label: LiveQuality.labelOf(_qn),
-                  onTap: _openQualityPanel,
-                ),
-                const SizedBox(width: 6),
-              ],
-              _OverlayIconButton(
-                icon: _landscape
-                    ? Icons.fullscreen_exit_rounded
-                    : Icons.fullscreen_rounded,
-                onTap: _toggleOrientation,
-                tooltip: _landscape ? '退出横屏' : '横屏观看',
-              ),
-            ],
-          ),
-        ),
-      ],
+    return LiveControlOverlay(
+      landscape: _landscape,
+      paused: _paused,
+      usingVoice: _usingVoice,
+      hasVoice: session?.hasVoice ?? false,
+      ready: session != null && _controller != null,
+      refreshing: _refreshing,
+      hasQuality:
+          (session?.qualities.value ?? const <LiveQuality>[]).isNotEmpty,
+      qualityLabel: LiveQuality.labelOf(_qn),
+      onTogglePause: _togglePause,
+      onRefresh: _refreshPicture,
+      onSync: _showSyncSheet,
+      onQuality: _openQualityPanel,
+      onToggleFullscreen: _toggleOrientation,
+      onOfficialSound: () => _switchSound(official: true),
+      onCommentatorSound: () => _switchSound(official: false),
     );
-  }
-
-  /// 画面下方的常驻按钮：暂停 / 继续、刷新画面源（声音源不动）。
-  Widget _buildPlaybackBar(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: _ConsoleButton(
-              icon: _paused ? Icons.play_arrow_rounded : Icons.pause_rounded,
-              label: _paused ? '继续' : '暂停',
-              onTap: _togglePause,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _ConsoleButton(
-              icon: Icons.refresh_rounded,
-              label: _refreshing ? '刷新中…' : '刷新画面源',
-              busy: _refreshing,
-              onTap: _refreshPicture,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 刷新画面源：只重连画面，声音源与解说选择保留。
-  Future<void> _refreshPicture() async {
-    final DualLiveSession? session = _session;
-    if (session == null || _refreshing) return;
-    setState(() => _refreshing = true);
-    try {
-      await session.refreshPicture();
-      if (mounted) showToast(context, '画面源已刷新');
-    } on Object catch (error) {
-      if (mounted) showToast(context, '$error');
-    } finally {
-      if (mounted) setState(() => _refreshing = false);
-    }
   }
 
   Widget _buildPlaceholder() {
@@ -847,684 +655,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 6, 10, 8),
-      child: Row(
-        children: <Widget>[
-          IconButton(
-            onPressed: () => context.canPop() ? context.pop() : context.go('/'),
-            icon: const Icon(
-              Icons.arrow_back_ios_new_rounded,
-              color: Colors.white,
-              size: 19,
-            ),
-          ),
-          _SourceAvatars(
-            picture: widget.args.picture,
-            voice: widget.args.voice,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(
-                  widget.args.picture.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  _voiceWarning ?? _status,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white54, fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-          if (_starting)
-            const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Colors.white54,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  /// 弹幕区：先占位，接入弹幕连接后在这里滚动消息。
-  Widget _buildDanmakuPanel(BuildContext context) {
-    final String source;
-    switch (widget.args.danmaku) {
-      case DanmakuSource.picture:
-        source = '画面直播间';
-      case DanmakuSource.voice:
-        source = '声音直播间';
-      case DanmakuSource.off:
-        source = '未开启';
-    }
-
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-      decoration: BoxDecoration(
-        color: const Color(0xFF12151E),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 11, 12, 8),
-            child: Row(
-              children: <Widget>[
-                const Icon(
-                  Icons.forum_rounded,
-                  size: 14,
-                  color: Colors.white54,
-                ),
-                const SizedBox(width: 6),
-                const Text(
-                  '弹幕',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '$source · 待接入',
-                    style: const TextStyle(color: Colors.white38, fontSize: 10),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Icon(
-                      Icons.chat_bubble_outline_rounded,
-                      size: 30,
-                      color: Colors.white.withValues(alpha: 0.18),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text(
-                      '弹幕区已就位',
-                      style: TextStyle(color: Colors.white54, fontSize: 12.5),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      '接入弹幕连接后，这里会实时滚动画面源的弹幕',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white24,
-                        fontSize: 11,
-                        height: 1.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 底部弹幕输入栏：发送能力等弹幕连接接入后再开放。
-  Widget _buildDanmakuInput(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _showDanmakuComingSoon,
-              child: Container(
-                height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.08),
-                  ),
-                ),
-                child: Row(
-                  children: <Widget>[
-                    const Text(
-                      '发个弹幕…',
-                      style: TextStyle(color: Colors.white30, fontSize: 12.5),
-                    ),
-                    const Spacer(),
-                    Icon(
-                      Icons.emoji_emotions_outlined,
-                      size: 18,
-                      color: Colors.white.withValues(alpha: 0.25),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _showDanmakuComingSoon,
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.35),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.send_rounded,
-                size: 18,
-                color: Colors.white70,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showDanmakuComingSoon() {
     showToast(context, '发弹幕将在接入弹幕连接后开放');
-  }
-}
-
-// ===== 面板与小组件 =====
-/// 头部的双源头像：左画面、右声音；没有声音源时只显示画面。
-class _SourceAvatars extends StatelessWidget {
-  const _SourceAvatars({required this.picture, this.voice});
-
-  final LiveRoom picture;
-  final LiveRoom? voice;
-
-  @override
-  Widget build(BuildContext context) {
-    final LiveRoom? second = voice;
-    return SizedBox(
-      width: second == null ? 38 : 60,
-      height: 38,
-      child: Stack(
-        children: <Widget>[
-          _SourceAvatar(
-            room: picture,
-            icon: Icons.desktop_windows_rounded,
-            tint: AppColors.primary,
-          ),
-          if (second != null)
-            Positioned(
-              left: 22,
-              child: _SourceAvatar(
-                room: second,
-                icon: Icons.headphones_rounded,
-                tint: const Color(0xFF37C26A),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 单个源头像：圆形头像 + 右下角来源角标，拼在一起表示双路合流。
-class _SourceAvatar extends StatelessWidget {
-  const _SourceAvatar({
-    required this.room,
-    required this.icon,
-    required this.tint,
-  });
-
-  final LiveRoom room;
-  final IconData icon;
-  final Color tint;
-
-  static const double _size = 38;
-
-  @override
-  Widget build(BuildContext context) {
-    final String raw = room.avatarUrl;
-    final String url = raw.startsWith('//') ? 'https:$raw' : raw;
-    return SizedBox(
-      width: _size,
-      height: _size,
-      child: Stack(
-        children: <Widget>[
-          Container(
-            width: _size,
-            height: _size,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: const Color(0xFF0B0D14), width: 2),
-            ),
-            child: ClipOval(
-              child: url.isEmpty
-                  ? _fallback()
-                  : Image.network(
-                      url,
-                      fit: BoxFit.cover,
-                      headers: const <String, String>{
-                        'Referer': 'https://www.bilibili.com/',
-                      },
-                      errorBuilder: (_, _, _) => _fallback(),
-                    ),
-            ),
-          ),
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: Container(
-              width: 15,
-              height: 15,
-              decoration: BoxDecoration(
-                color: const Color(0xFF0B0D14),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: tint.withValues(alpha: 0.9),
-                  width: 1,
-                ),
-              ),
-              child: Icon(icon, size: 9, color: tint),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _fallback() {
-    return ColoredBox(
-      color: const Color(0xFF1A1E2A),
-      child: Center(
-        child: Icon(
-          icon,
-          size: _size * 0.4,
-          color: tint.withValues(alpha: 0.85),
-        ),
-      ),
-    );
-  }
-}
-
-/// 画面右上角的画质胶囊。
-class _QualityChip extends StatelessWidget {
-  const _QualityChip({required this.label, required this.onTap});
-
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.45),
-          borderRadius: BorderRadius.circular(9),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            const Icon(
-              Icons.high_quality_rounded,
-              size: 12,
-              color: Colors.white70,
-            ),
-            const SizedBox(width: 3),
-            Text(
-              label,
-              style: const TextStyle(color: Colors.white, fontSize: 11),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 控制层上的方形图标按钮。
-class _OverlayIconButton extends StatelessWidget {
-  const _OverlayIconButton({
-    required this.icon,
-    required this.onTap,
-    this.filled = false,
-    this.tooltip,
-  });
-
-  final IconData icon;
-  final VoidCallback? onTap;
-  final bool filled;
-  final String? tooltip;
-
-  @override
-  Widget build(BuildContext context) {
-    final Widget button = GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: 34,
-        height: 34,
-        decoration: BoxDecoration(
-          color: filled
-              ? AppColors.primary
-              : Colors.black.withValues(alpha: 0.45),
-          borderRadius: BorderRadius.circular(10),
-          border: filled
-              ? null
-              : Border.all(color: Colors.white.withValues(alpha: 0.16)),
-        ),
-        child: Icon(icon, size: filled ? 20 : 18, color: Colors.white),
-      ),
-    );
-    final String? message = tooltip;
-    if (message == null) return button;
-    return Tooltip(message: message, child: button);
-  }
-}
-
-/// 同步面板：分别让画面 / 声音额外延迟 0.5 秒，或重新从零校准。
-class _SyncSheet extends StatefulWidget {
-  const _SyncSheet({required this.session, required this.onRestart});
-
-  final DualLiveSession session;
-  final VoidCallback onRestart;
-
-  @override
-  State<_SyncSheet> createState() => _SyncSheetState();
-}
-
-class _SyncSheetState extends State<_SyncSheet> {
-  bool _busy = false;
-
-  Future<void> _delay({required bool picture}) async {
-    if (_busy) return;
-    setState(() => _busy = true);
-    try {
-      if (picture) {
-        await widget.session.delayPicture(const Duration(milliseconds: 500));
-      } else {
-        await widget.session.delayVoice(const Duration(milliseconds: 500));
-      }
-    } on Object catch (error) {
-      if (mounted) showToast(context, '$error');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final DualLiveSession session = widget.session;
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                const Text(
-                  '同步调节',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(
-                    Icons.close_rounded,
-                    color: Colors.white54,
-                    size: 20,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 2),
-            Text(
-              '画面延迟 ${(session.pictureDelay.inMilliseconds / 1000).toStringAsFixed(1)}s'
-              ' · 声音延迟 ${(session.voiceDelay.inMilliseconds / 1000).toStringAsFixed(1)}s',
-              style: const TextStyle(color: Colors.white54, fontSize: 12),
-            ),
-            const SizedBox(height: 16),
-            _SyncAction(
-              icon: Icons.ondemand_video_rounded,
-              title: '画面慢 0.5 秒',
-              subtitle: '声音比画面晚时使用',
-              enabled: !_busy && session.hasVoice,
-              onTap: () => _delay(picture: true),
-            ),
-            _SyncAction(
-              icon: Icons.graphic_eq_rounded,
-              title: '声音慢 0.5 秒',
-              subtitle: '画面比声音晚时使用',
-              enabled: !_busy && session.hasVoice,
-              onTap: () => _delay(picture: false),
-            ),
-            _SyncAction(
-              icon: Icons.restart_alt_rounded,
-              title: '重新连接并从零校准',
-              subtitle: '延迟会重置，需要重新建立两路连接',
-              enabled: !_busy,
-              onTap: widget.onRestart,
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              '同步只在本次播放内有效，重连或切换直播间后会重置。',
-              style: TextStyle(
-                color: Colors.white30,
-                fontSize: 11,
-                height: 1.5,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SyncAction extends StatelessWidget {
-  const _SyncAction({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.enabled,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final bool enabled;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: enabled ? onTap : null,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Row(
-          children: <Widget>[
-            Icon(
-              icon,
-              size: 20,
-              color: enabled ? AppColors.primary : Colors.white24,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(
-                    title,
-                    style: TextStyle(
-                      color: enabled ? Colors.white : Colors.white38,
-                      fontSize: 13.5,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(color: Colors.white30, fontSize: 11),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 画面下方的常驻操作按钮（暂停 / 刷新画面源）。
-class _ConsoleButton extends StatelessWidget {
-  const _ConsoleButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.busy = false,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback? onTap;
-  final bool busy;
-
-  @override
-  Widget build(BuildContext context) {
-    final bool enabled = onTap != null && !busy;
-    return GestureDetector(
-      onTap: enabled ? onTap : null,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        height: 42,
-        decoration: BoxDecoration(
-          color: const Color(0xFF12151E),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            if (busy)
-              const SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(
-                  strokeWidth: 1.8,
-                  color: Colors.white54,
-                ),
-              )
-            else
-              Icon(
-                icon,
-                size: 16,
-                color: enabled ? Colors.white70 : Colors.white24,
-              ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12.5,
-                color: enabled ? Colors.white : Colors.white38,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SoundChip extends StatelessWidget {
-  const _SoundChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    this.enabled = true,
-  });
-
-  final String label;
-  final bool selected;
-  final bool enabled;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final Color color = !enabled
-        ? Colors.white24
-        : (selected ? AppColors.primary : Colors.white70);
-    return GestureDetector(
-      onTap: enabled ? onTap : null,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(
-          color: selected
-              ? AppColors.primary.withValues(alpha: 0.18)
-              : Colors.white.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: selected
-                ? AppColors.primary.withValues(alpha: 0.55)
-                : Colors.white.withValues(alpha: 0.08),
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: color,
-            fontSize: 12,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-          ),
-        ),
-      ),
-    );
   }
 }
