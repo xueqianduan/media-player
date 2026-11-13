@@ -93,7 +93,9 @@ class LiveLeg {
     );
 
     await player.setVideoTrack(picture ? VideoTrack.auto() : VideoTrack.no());
-    await player.setAudioTrack(picture ? AudioTrack.no() : AudioTrack.auto());
+    // 画面源从启动就保留音轨（靠音量 0 静音）：
+    // 音频时钟持续运行，切声时不再关闭/重开音轨，避免画面重新定位追赶。
+    await player.setAudioTrack(AudioTrack.auto());
     await player.setVolume(0);
 
     final Duration initialPosition = player.state.position;

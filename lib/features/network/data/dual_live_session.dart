@@ -10,7 +10,6 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../domain/live_models.dart';
@@ -265,16 +264,15 @@ class DualLiveSession {
     if (video == null) throw StateError('画面源尚未连接');
     if (!official && voice == null) throw StateError('声音源尚未连接');
 
-    // 先全部静音，再启用选中的一路，保证同时只有一路发声。
+    // 只调音量，不动音轨：画面源的音轨从启动起就一直开着，
+    // 音频时钟持续运行，切原声/解说时不用重新初始化音频链路。
     await video.player.setVolume(0);
     await voice?.player.setVolume(0);
 
     if (official) {
-      await video.player.setAudioTrack(AudioTrack.auto());
       await video.player.setVolume(100);
       usingVoice.value = false;
     } else {
-      await video.player.setAudioTrack(AudioTrack.no());
       await voice!.player.setVolume(100);
       usingVoice.value = true;
     }
