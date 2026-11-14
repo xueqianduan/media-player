@@ -39,8 +39,49 @@ class LiveDanmakuSettingsPanel extends StatelessWidget {
   final VoidCallback onReset;
   final VoidCallback onClose;
 
+  /// 显示区域五档：10% / 25% / 50% / 75% / 100%。
+  static const List<double> areaOptions = <double>[
+    0.10,
+    0.25,
+    0.50,
+    0.75,
+    1.00,
+  ];
+  static const List<String> areaLabels = <String>[
+    '10%',
+    '25%',
+    '50%',
+    '75%',
+    '100%',
+  ];
+
+  /// 速度五档，映射到飘屏的速度倍率。
+  static const List<double> speedOptions = <double>[0.5, 0.75, 1.0, 1.5, 2.0];
+  static const List<String> speedLabels = <String>[
+    '极慢',
+    '较慢',
+    '正常',
+    '较快',
+    '极快',
+  ];
+
+  static int nearestIndex(List<double> values, double value) {
+    int best = 0;
+    double distance = double.infinity;
+    for (int i = 0; i < values.length; i++) {
+      final double next = (values[i] - value).abs();
+      if (next < distance) {
+        distance = next;
+        best = i;
+      }
+    }
+    return best;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final int areaIndex = nearestIndex(areaOptions, area);
+    final int speedIndex = nearestIndex(speedOptions, speed);
     return LiveSidePanel(
       onClose: onClose,
       widthFactor: 0.95,
@@ -76,12 +117,13 @@ class LiveDanmakuSettingsPanel extends StatelessWidget {
             const SizedBox(height: 4),
             _DanmakuSlider(
               title: '显示区域',
-              valueLabel: '${(area * 100).round()}%',
-              value: area,
-              min: 0.25,
-              max: 1.0,
-              divisions: 3,
-              onChanged: onAreaChanged,
+              valueLabel: areaLabels[areaIndex],
+              value: areaIndex.toDouble(),
+              min: 0,
+              max: (areaOptions.length - 1).toDouble(),
+              divisions: areaOptions.length - 1,
+              onChanged: (double next) =>
+                  onAreaChanged(areaOptions[next.round()]),
             ),
             _DanmakuSlider(
               title: '不透明度',
@@ -89,26 +131,25 @@ class LiveDanmakuSettingsPanel extends StatelessWidget {
               value: opacity,
               min: 0.2,
               max: 1.0,
-              divisions: 8,
               onChanged: onOpacityChanged,
             ),
             _DanmakuSlider(
               title: '字体大小',
               valueLabel: '${(fontScale * 100).round()}%',
               value: fontScale,
-              min: 0.6,
-              max: 1.6,
-              divisions: 10,
+              min: 0.5,
+              max: 2.0,
               onChanged: onFontScaleChanged,
             ),
             _DanmakuSlider(
               title: '弹幕速度',
-              valueLabel: _speedLabel(speed),
-              value: speed,
-              min: 0.5,
-              max: 2.0,
-              divisions: 6,
-              onChanged: onSpeedChanged,
+              valueLabel: speedLabels[speedIndex],
+              value: speedIndex.toDouble(),
+              min: 0,
+              max: (speedOptions.length - 1).toDouble(),
+              divisions: speedOptions.length - 1,
+              onChanged: (double next) =>
+                  onSpeedChanged(speedOptions[next.round()]),
             ),
             const SizedBox(height: 6),
             const Text(
@@ -136,13 +177,6 @@ class LiveDanmakuSettingsPanel extends StatelessWidget {
       ),
     );
   }
-
-  static String _speedLabel(double value) {
-    if (value <= 0.75) return '较慢';
-    if (value <= 1.25) return '正常';
-    if (value <= 1.75) return '较快';
-    return '极快';
-  }
 }
 
 class _DanmakuSlider extends StatelessWidget {
@@ -152,7 +186,7 @@ class _DanmakuSlider extends StatelessWidget {
     required this.value,
     required this.min,
     required this.max,
-    required this.divisions,
+    this.divisions,
     required this.onChanged,
   });
 
@@ -161,7 +195,9 @@ class _DanmakuSlider extends StatelessWidget {
   final double value;
   final double min;
   final double max;
-  final int divisions;
+
+  /// null 表示连续滑动，不显示刻度点。
+  final int? divisions;
   final ValueChanged<double> onChanged;
 
   @override

@@ -6,6 +6,7 @@
 // - 开播状态与房间详情
 // - 取流地址解析（getRoomPlayInfo）
 // - 统一的中文错误映射
+// - 官方弹幕表情列表
 // -------------------------------------------------------------------------
 
 import 'dart:async';
@@ -13,6 +14,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import '../domain/danmaku_models.dart';
 import '../domain/live_models.dart';
 
 /// 网络请求或接口返回错误（带可读中文提示）。
@@ -528,6 +530,61 @@ class BiliLiveApi {
       default:
         return message.isEmpty ? '弹幕发送失败（$code）' : '弹幕发送失败（$code）：$message';
     }
+  }
+
+  /// 拉取该直播间可用的官方表情（需要登录态）。
+  ///
+  /// 只返回当前账号有权限使用的表情：`perm != 0` 的需要粉丝勋章等条件，
+  /// 发了也会被服务端拒绝，因此直接过滤掉。
+  Future<List<LiveEmoticon>> fetchEmoticons({
+    required int roomId,
+    String? cookie,
+  }) async {
+    final Map<String, dynamic> root = await _get(
+      'api.live.bilibili.com',
+      '/xlive/web-ucenter/v2/emoticon/GetEmoticons',
+      <String, String>{'platform': 'pc', 'room_id': '$roomId'},
+      referer: '$_liveReferer$roomId',
+      cookie: cookie,
+    );
+
+    final int code = _jsonInt(root['code']);
+    if (code != 0) {
+      if (code == -101 || code == -400) {
+        throw const LiveApiException('登录 B 站账号后可使用表情');
+      }
+      throw LiveApiException('表情加载失败（$code ${root['message'] ?? ''}）'.trim());
+    }
+
+    final Object? payload = root['data'];
+    final Object? rows = payload is Map ? payload['data'] : payload;
+
+    final List<LiveEmoticon> result = <LiveEmoticon>[];
+    for (final Map<String, dynamic> pack in _jsonRows(rows)) {
+      for (final Map<String, dynamic> item in _jsonRows(pack['emoticons'])) {
+        if (_jsonInt(item['perm']) != 0) continue;
+        String url = '${item['url'] ?? ''}';
+        if (url.isEmpty) continue;
+        if (url.startsWith('//')) url = 'https:$url';
+        if (url.startsWith('http://')) {
+          url = url.replaceFirst('http://', 'https://');
+        }
+
+        String emoji = '${item['emoji'] ?? ''}'.trim();
+        if (emoji.isEmpty) continue;
+        if (!emoji.startsWith('[')) emoji = '[$emoji]';
+
+        final String label = '${item['descript'] ?? ''}'.trim();
+        result.add(
+          LiveEmoticon(
+            emoji: emoji,
+            label: label.isEmpty ? emoji : label,
+            url: url,
+          ),
+        );
+      }
+    }
+    return result;
   }
 
   /// 从用户输入中解析房间号：支持纯数字、live.bilibili.com/12345 等。

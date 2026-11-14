@@ -40,13 +40,13 @@ class LiveDanmakuOverlay extends StatefulWidget {
   /// 弹幕开关：关闭后清空当前弹幕，也不再生成新的。
   final bool enabled;
 
-  /// 显示区域占屏幕高度的比例（0.25 ~ 1.0）。
+  /// 显示区域占屏幕高度的比例（0.1 ~ 1.0）。
   final double area;
 
   /// 不透明度（0.2 ~ 1.0）。
   final double opacity;
 
-  /// 字号缩放（0.6 ~ 1.6）。
+  /// 字号缩放（0.5 ~ 2.0）。
   final double fontScale;
 
   /// 速度倍率（0.5 ~ 2.0）。
@@ -96,11 +96,11 @@ class _LiveDanmakuOverlayState extends State<LiveDanmakuOverlay>
     _ticker.start();
   }
 
-  double get _fontSize => _baseFontSize * widget.fontScale.clamp(0.6, 1.6);
+  double get _fontSize => _baseFontSize * widget.fontScale.clamp(0.5, 2.0);
 
   double get _laneHeight => _fontSize * 1.8 + 4;
 
-  double get _areaFactor => widget.area.clamp(0.25, 1.0);
+  double get _areaFactor => widget.area.clamp(0.1, 1.0);
 
   @override
   void didUpdateWidget(covariant LiveDanmakuOverlay oldWidget) {

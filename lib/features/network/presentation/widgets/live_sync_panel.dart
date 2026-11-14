@@ -10,7 +10,6 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_theme.dart';
-import '../../../../core/widgets/ui_kit.dart';
 import '../../data/dual_live_session.dart';
 import 'live_side_panel.dart';
 
@@ -34,9 +33,15 @@ class LiveSyncPanel extends StatefulWidget {
 class _LiveSyncPanelState extends State<LiveSyncPanel> {
   bool _busy = false;
 
+  /// 面板内的一行失败原因，不再用 toast 打断画面。
+  String? _error;
+
   Future<void> _delay({required bool picture}) async {
     if (_busy) return;
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     try {
       if (picture) {
         await widget.session.delayPicture(const Duration(milliseconds: 500));
@@ -44,7 +49,7 @@ class _LiveSyncPanelState extends State<LiveSyncPanel> {
         await widget.session.delayVoice(const Duration(milliseconds: 500));
       }
     } on Object catch (error) {
-      if (mounted) showToast(context, '$error');
+      if (mounted) setState(() => _error = '$error');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -134,6 +139,17 @@ class _LiveSyncPanelState extends State<LiveSyncPanel> {
               enabled: !_busy,
               onTap: widget.onRestart,
             ),
+            if (_error != null) ...<Widget>[
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                style: const TextStyle(
+                  color: Color(0xFFE08A8A),
+                  fontSize: 10.5,
+                  height: 1.4,
+                ),
+              ),
+            ],
             if (_busy) ...<Widget>[
               const SizedBox(height: 10),
               const Row(

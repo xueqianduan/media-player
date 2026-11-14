@@ -58,3 +58,23 @@ class DanmakuMessage {
   /// 当整条弹幕就是一个表情时，这里是表情图片地址。
   final String? emoticonUrl;
 }
+
+/// B 站官方直播表情。
+///
+/// [emoji] 是发送时写进弹幕内容的文本（例如 `[dog]`），[url] 用于显示。
+class LiveEmoticon {
+  const LiveEmoticon({
+    required this.emoji,
+    required this.label,
+    required this.url,
+  });
+
+  /// 发送用的表情文本，形如 `[dog]`。
+  final String emoji;
+
+  /// 表情名称，用于无障碍与提示。
+  final String label;
+
+  /// 表情图片地址。
+  final String url;
+}

@@ -138,12 +138,20 @@ class LiveQuality {
   final int qn;
   final String label;
 
+  /// 未登录时 B 站实际封顶的档位（实测：请求 10000 仍只给 250）。
+  static const int anonymousMaxQn = 250;
+
+  /// 需要登录才能使用的档位。
+  bool get requiresLogin => qn > anonymousMaxQn;
+
   static String labelOf(int qn) {
     switch (qn) {
       case 30000:
         return '杜比';
       case 20000:
         return '4K';
+      case 15000:
+        return '2K';
       case 10000:
         return '原画';
       case 400:
@@ -177,78 +185,6 @@ class LivePlaylist {
   final List<LiveStream> streams;
   final List<LiveQuality> qualities;
   final int currentQn;
-}
-
-/// 直播进度：当前播放位置 + 播放器实际可定位的连续区间。
-///
-/// 区间来自 mpv 的 `seekable-ranges`，不是固定 40 秒窗口，也不是
-/// `demuxer-cache-duration` 推算值。区间之外不允许拖动，避免“看起来能拖、
-/// 实际定位失败又弹回”。
-class LiveProgress {
-  const LiveProgress({
-    this.position = Duration.zero,
-    this.rangeStart = Duration.zero,
-    this.rangeEnd = Duration.zero,
-    this.available = false,
-    this.seeking = false,
-    this.returning = false,
-    this.seekTarget,
-  });
-
-  /// 当前播放位置（相对本路流起点）。
-  final Duration position;
-
-  /// 可定位区间起点。
-  final Duration rangeStart;
-
-  /// 可定位区间终点（当前缓存中确实能 seek 到的最后位置）。
-  final Duration rangeEnd;
-
-  /// 播放器是否已经报告了有效的可定位区间。
-  final bool available;
-
-  /// 正在执行一次定位，界面显示「定位中」。
-  final bool seeking;
-
-  /// 正在重新取流回到直播，界面显示「回到直播中」。
-  final bool returning;
-
-  /// 本次定位的目标位置，仅用于诊断 / 展示。
-  final Duration? seekTarget;
-
-  /// 可回退时长。
-  Duration get window => rangeEnd - rangeStart;
-
-  /// 3 秒以内视为直播边缘。
-  bool get atLive =>
-      !available ||
-      (!seeking &&
-          !returning &&
-          rangeEnd - position <= const Duration(seconds: 3));
-
-  /// 进度条比例：直播时恒为 1，回看时按真实区间换算。
-  double get fraction {
-    if (!available || atLive) return 1;
-    final int total = window.inMilliseconds;
-    if (total <= 0) return 1;
-    final int played = (position - rangeStart).inMilliseconds;
-    return (played / total).clamp(0.0, 1.0);
-  }
-
-  /// 落后直播边缘的时长。
-  Duration get lag {
-    if (!available) return Duration.zero;
-    final Duration value = rangeEnd - position;
-    return value.isNegative ? Duration.zero : value;
-  }
-
-  /// 把滑块比例换算成区间内的绝对位置。
-  Duration targetFor(double value) {
-    if (!available) return position;
-    final double ratio = value.clamp(0.0, 1.0);
-    final int milliseconds = (window.inMilliseconds * ratio).round();
-    return rangeStart + Duration(milliseconds: milliseconds);
-  }
 }
 
 /// 双路观赛组合：画面来源 + 可选声音来源 + 弹幕来源。

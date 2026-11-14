@@ -36,8 +36,8 @@ import 'widgets/live_console_header.dart';
 import 'widgets/live_danmaku_overlay.dart';
 import 'widgets/live_danmaku_panel.dart';
 import 'widgets/live_danmaku_settings_panel.dart';
+import 'widgets/live_emoticon_panel.dart';
 import 'widgets/live_portrait_control_bar.dart';
-import 'widgets/live_progress_bar.dart';
 import 'widgets/live_quality_panel.dart';
 import 'widgets/live_sync_panel.dart';
 
@@ -106,6 +106,19 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
   Timer? _danmakuFlush;
   bool _sendingDanmaku = false;
 
+  /// 弹幕输入框：竖屏与横屏共用，转屏不丢草稿。
+  final TextEditingController _danmakuText = TextEditingController();
+  final FocusNode _danmakuFocus = FocusNode();
+
+  /// 输入框是否正在输入：横屏时整行让给输入区。
+  bool _composerFocused = false;
+
+  // ===== 官方表情 =====
+  bool _emojiOpen = false;
+  List<LiveEmoticon> _emoticons = const <LiveEmoticon>[];
+  bool _emojiLoading = false;
+  String? _emojiError;
+
   /// 列表上限：只保留最近 200 条，避免长时间挂机后内存持续增长。
   static const int _danmakuLimit = 200;
 
@@ -128,6 +141,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
     // 拖动调音量时不要弹出系统音量面板。
     VolumeController.instance.showSystemUI = false;
     VolumeController.instance.addListener(_onSystemVolumeChanged);
+    _danmakuFocus.addListener(_onComposerFocus);
     unawaited(_loadSystemLevels());
     if (kDebugMode) {
       SchedulerBinding.instance.addTimingsCallback(_onFrameTimings);
@@ -423,7 +437,10 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
 
   // ===== 控制层显隐与横屏 =====
   void _toggleControls() {
-    setState(() => _controlsVisible = !_controlsVisible);
+    setState(() {
+      _controlsVisible = !_controlsVisible;
+      if (!_controlsVisible) _emojiOpen = false;
+    });
     if (_controlsVisible) {
       _scheduleHide();
     } else {
@@ -435,10 +452,12 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
     _hideTimer?.cancel();
     // 加载中、出错、暂停时都保持控制层可见，避免用户没得点。
     if (_paused || _starting || _error != null) return;
+    // 正在输入弹幕或挑表情时不隐藏，避免输入框突然消失。
+    if (_emojiOpen || _danmakuFocus.hasFocus) return;
     _hideTimer = Timer(const Duration(seconds: 4), () {
-      if (mounted && _controlsVisible) {
-        setState(() => _controlsVisible = false);
-      }
+      if (!mounted || !_controlsVisible) return;
+      if (_emojiOpen || _danmakuFocus.hasFocus) return;
+      setState(() => _controlsVisible = false);
     });
   }
 
@@ -508,6 +527,8 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
   void _openQualityPanel() {
     final DualLiveSession? session = _session;
     if (session == null) return;
+    // 登录可能发生在播放中：开面板前带上最新 Cookie，高档位才能真的生效。
+    session.updateCookie(ref.read(biliSessionProvider).cookieHeader);
     if (session.qualities.value.isEmpty) {
       showToast(context, '这个直播间暂时没有可选画质');
       return;
@@ -517,6 +538,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
       _qualityOpen = true;
       _syncOpen = false;
       _danmakuSettingsOpen = false;
+      _emojiOpen = false;
       _controlsVisible = true;
     });
   }
@@ -560,6 +582,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
       _syncOpen = true;
       _qualityOpen = false;
       _danmakuSettingsOpen = false;
+      _emojiOpen = false;
       _controlsVisible = true;
     });
   }
@@ -577,6 +600,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
       _danmakuSettingsOpen = true;
       _qualityOpen = false;
       _syncOpen = false;
+      _emojiOpen = false;
       _controlsVisible = true;
     });
   }
@@ -588,9 +612,18 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
   }
 
   void _toggleDanmaku() {
+    // 图标本身就是状态，不再弹提示。
     final bool next = !ref.read(settingsControllerProvider).danmakuEnabled;
     ref.read(settingsControllerProvider.notifier).setDanmakuEnabled(next);
-    showToast(context, next ? '弹幕已开启' : '弹幕已关闭');
+    if (!next) {
+      // 关闭弹幕后输入框和设置入口一起收起，留在页面上也没意义。
+      _danmakuFocus.unfocus();
+      setState(() {
+        _emojiOpen = false;
+        _danmakuSettingsOpen = false;
+        _composerFocused = false;
+      });
+    }
     _scheduleHide();
   }
 
@@ -618,10 +651,9 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
             csrf: csrf,
           );
       if (!mounted) return true;
+      // 发送成功不弹提示：自己的弹幕会出现在弹幕区里。
       if (warning != null && warning.isNotEmpty) {
         showToast(context, warning);
-      } else {
-        showToast(context, '弹幕已发送');
       }
       return true;
     } on Object catch (error) {
@@ -678,8 +710,125 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
     return true;
   }
 
-  void _showEmojiComingSoon() {
-    showToast(context, '表情弹幕将在后续版本开放');
+  // ===== 表情面板 =====
+  void _onComposerFocus() {
+    if (!mounted) return;
+    _hideTimer?.cancel();
+    final bool focused = _danmakuFocus.hasFocus;
+    if (_composerFocused != focused) {
+      setState(() => _composerFocused = focused);
+    }
+    if (!focused) _scheduleHide();
+  }
+
+  void _toggleEmojiPanel() {
+    if (_emojiOpen) {
+      _closeEmojiPanel();
+      return;
+    }
+    _hideTimer?.cancel();
+    // 表情面板优先：先收起键盘，横屏才有空间展示。
+    _danmakuFocus.unfocus();
+    setState(() {
+      _emojiOpen = true;
+      _controlsVisible = true;
+      _qualityOpen = false;
+      _syncOpen = false;
+      _danmakuSettingsOpen = false;
+    });
+    if (ref.read(biliAccountProvider).loggedIn && _emoticons.isEmpty) {
+      unawaited(_loadEmoticons());
+    }
+  }
+
+  void _closeEmojiPanel() {
+    if (!_emojiOpen) return;
+    setState(() => _emojiOpen = false);
+    _scheduleHide();
+  }
+
+  Future<void> _loadEmoticons() async {
+    if (_emojiLoading) return;
+    final LiveRoom room = _danmakuRoom;
+    setState(() {
+      _emojiLoading = true;
+      _emojiError = null;
+    });
+    try {
+      final List<LiveEmoticon> list = await ref
+          .read(biliLiveApiProvider)
+          .fetchEmoticons(
+            roomId: room.roomId,
+            cookie: ref.read(biliSessionProvider).cookieHeader,
+          );
+      if (!mounted) return;
+      setState(() {
+        _emoticons = list;
+        _emojiLoading = false;
+      });
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _emojiLoading = false;
+        _emojiError = '$error';
+      });
+    }
+  }
+
+  Future<void> _loginForEmoji() async {
+    final bool ok = await _ensureBiliLoginForSend();
+    if (!ok || !mounted) return;
+    await _loadEmoticons();
+  }
+
+  /// 表情以 `[dog]` 这种文本插入输入框，和官方发送格式一致。
+  void _pickEmoticon(LiveEmoticon emoticon) {
+    final String text = _danmakuText.text;
+    if (text.length + emoticon.emoji.length > 20) return;
+    final int offset = _danmakuText.selection.baseOffset;
+    final int at = offset < 0 || offset > text.length ? text.length : offset;
+    _danmakuText.value = TextEditingValue(
+      text: text.replaceRange(at, at, emoticon.emoji),
+      selection: TextSelection.collapsed(offset: at + emoticon.emoji.length),
+    );
+  }
+
+  /// 表情面板：贴在输入框上方，点空白关闭。
+  Widget _buildEmojiOverlay(BuildContext context) {
+    final EdgeInsets padding = MediaQuery.viewPaddingOf(context);
+    final double bottom = (_landscape ? 50 : 66) + padding.bottom;
+    final double panelHeight = _landscape ? 152 : 218;
+    return Stack(
+      children: <Widget>[
+        // 只挡住面板上方：输入框本身仍然可以点。
+        Positioned(
+          left: 0,
+          right: 0,
+          top: 0,
+          bottom: bottom + panelHeight,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _closeEmojiPanel,
+          ),
+        ),
+        Positioned(
+          left: 12 + (_landscape ? padding.left : 0),
+          right: 12 + (_landscape ? padding.right : 0),
+          bottom: bottom,
+          child: LiveEmoticonPanel(
+            items: _emoticons,
+            loading: _emojiLoading,
+            error: _emojiError,
+            loggedIn: ref.watch(biliAccountProvider).loggedIn,
+            compact: _landscape,
+            onLogin: _loginForEmoji,
+            onRetry: _loadEmoticons,
+            onPick: _pickEmoticon,
+            onClose: _closeEmojiPanel,
+          ),
+        ),
+      ],
+    );
   }
 
   @override
@@ -687,6 +836,9 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
     _hideTimer?.cancel();
     _hintTimer?.cancel();
     _danmakuFlush?.cancel();
+    _danmakuFocus.removeListener(_onComposerFocus);
+    _danmakuFocus.dispose();
+    _danmakuText.dispose();
     unawaited(_danmakuFeed.close());
     if (kDebugMode) {
       SchedulerBinding.instance.removeTimingsCallback(_onFrameTimings);
@@ -723,10 +875,18 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop:
-          !_landscape && !_qualityOpen && !_syncOpen && !_danmakuSettingsOpen,
+          !_landscape &&
+          !_qualityOpen &&
+          !_syncOpen &&
+          !_danmakuSettingsOpen &&
+          !_emojiOpen,
       onPopInvokedWithResult: (bool didPop, Object? result) {
         if (didPop) return;
         // 面板打开时返回键先收起面板；横屏时先退出全屏，都不是直接离开播放页。
+        if (_emojiOpen) {
+          _closeEmojiPanel();
+          return;
+        }
         if (_danmakuSettingsOpen) {
           _closeDanmakuSettings();
           return;
@@ -764,6 +924,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
                 child: LiveQualityPanelOverlay(
                   options: _session?.qualities.value ?? const <LiveQuality>[],
                   currentQn: _session?.currentQn.value ?? _qn,
+                  loggedIn: ref.watch(biliAccountProvider).loggedIn,
                   onSelect: (int qn) {
                     _closeQualityPanel();
                     _switchQuality(qn);
@@ -771,6 +932,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
                   onClose: _closeQualityPanel,
                 ),
               ),
+            if (_emojiOpen) Positioned.fill(child: _buildEmojiOverlay(context)),
             if (_danmakuSettingsOpen)
               Positioned.fill(
                 // 只让面板订阅设置，拖动滑块时不会重建视频层。
@@ -833,12 +995,65 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
             error: _danmakuError,
           ),
         ),
-        LiveDanmakuInputBar(
-          enabled: widget.args.danmaku != DanmakuSource.off,
-          sending: _sendingDanmaku,
-          onSend: _sendDanmaku,
-          onBlocked: () => showToast(context, '先在首页选择弹幕来源'),
-          onEmoji: _showEmojiComingSoon,
+        Consumer(
+          builder: (BuildContext context, WidgetRef ref, Widget? child) {
+            final bool enabled = ref.watch(
+              settingsControllerProvider.select(
+                (AppSettings settings) => settings.danmakuEnabled,
+              ),
+            );
+            if (!enabled) {
+              // 关掉弹幕后不给输入框，但留一个入口方便重新打开。
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _toggleDanmaku,
+                child: Container(
+                  height: 38,
+                  margin: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(19),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.08),
+                    ),
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      const Icon(
+                        Icons.subtitles_off_rounded,
+                        size: 15,
+                        color: Colors.white38,
+                      ),
+                      const SizedBox(width: 7),
+                      const Text(
+                        '弹幕已关闭',
+                        style: TextStyle(color: Colors.white38, fontSize: 12),
+                      ),
+                      const Spacer(),
+                      const Text(
+                        '开启',
+                        style: TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+            return LiveDanmakuInputBar(
+              enabled: widget.args.danmaku != DanmakuSource.off,
+              sending: _sendingDanmaku,
+              onSend: _sendDanmaku,
+              onBlocked: () => showToast(context, '先在首页选择弹幕来源'),
+              onEmoji: _toggleEmojiPanel,
+              controller: _danmakuText,
+              focusNode: _danmakuFocus,
+            );
+          },
         ),
       ],
     );
@@ -885,47 +1100,9 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
               );
             },
           ),
-        if (_controlsVisible)
-          Positioned(left: 0, right: 0, bottom: 48, child: _buildProgress()),
         _buildGestureHint(),
       ],
     );
-  }
-
-  /// 进度条：没有会话时占位同样高度，避免布局跳动。
-  Widget _buildProgress() {
-    final DualLiveSession? session = _session;
-    if (session == null) return const SizedBox(height: 34);
-    return ValueListenableBuilder<LiveProgress>(
-      valueListenable: session.progress,
-      builder: (BuildContext context, LiveProgress progress, Widget? child) {
-        return LiveProgressBar(
-          progress: progress,
-          onSeek: _seekTo,
-          onGoLive: _goLive,
-        );
-      },
-    );
-  }
-
-  Future<void> _seekTo(Duration target) async {
-    final DualLiveSession? session = _session;
-    if (session == null) return;
-    try {
-      await session.seekTo(target);
-    } on Object catch (error) {
-      if (mounted) showToast(context, '$error');
-    }
-  }
-
-  Future<void> _goLive() async {
-    final DualLiveSession? session = _session;
-    if (session == null) return;
-    try {
-      await session.goLive();
-    } on Object catch (error) {
-      if (mounted) showToast(context, '$error');
-    }
   }
 
   Widget _buildVideo(BoxFit fit) {
@@ -941,7 +1118,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
 
   /// 画面区：固定 16:9，点一下呼出 / 收起控制层。
   ///
-  /// 底部工具条放在亮度/音量手势层之外，避免拖动进度条时与纵向手势抢事件。
+  /// 底部工具条放在亮度/音量手势层之外，避免与纵向手势抢事件。
   Widget _buildVideoStage(BuildContext context) {
     return AspectRatio(
       aspectRatio: 16 / 9,
@@ -976,39 +1153,15 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
     );
   }
 
-  /// 竖屏画面底部：暂停、进度、横屏。
+  /// 竖屏画面底部：暂停与横屏。
   Widget _buildPortraitOverlay() {
-    final DualLiveSession? session = _session;
-    if (session == null) {
-      return Align(
-        alignment: Alignment.bottomCenter,
-        child: LivePortraitControlBar(
-          progress: const LiveProgress(),
-          paused: _paused,
-          ready: false,
-          onTogglePause: _togglePause,
-          onSeek: _seekTo,
-          onGoLive: _goLive,
-          onToggleFullscreen: _toggleOrientation,
-        ),
-      );
-    }
-
     return Align(
       alignment: Alignment.bottomCenter,
-      child: ValueListenableBuilder<LiveProgress>(
-        valueListenable: session.progress,
-        builder: (BuildContext context, LiveProgress progress, Widget? child) {
-          return LivePortraitControlBar(
-            progress: progress,
-            paused: _paused,
-            ready: _controller != null,
-            onTogglePause: _togglePause,
-            onSeek: _seekTo,
-            onGoLive: _goLive,
-            onToggleFullscreen: _toggleOrientation,
-          );
-        },
+      child: LivePortraitControlBar(
+        paused: _paused,
+        ready: _controller != null,
+        onTogglePause: _togglePause,
+        onToggleFullscreen: _toggleOrientation,
       ),
     );
   }
@@ -1047,6 +1200,20 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
       onToggleDanmaku: _toggleDanmaku,
       onDanmakuSettings: _openDanmakuSettings,
       onSync: _openSyncPanel,
+      composer: danmakuEnabled
+          ? LiveDanmakuInputBar(
+              compact: true,
+              enabled: widget.args.danmaku != DanmakuSource.off,
+              sending: _sendingDanmaku,
+              onSend: _sendDanmaku,
+              onBlocked: () => showToast(context, '先在首页选择弹幕来源'),
+              onEmoji: _toggleEmojiPanel,
+              controller: _danmakuText,
+              focusNode: _danmakuFocus,
+            )
+          : null,
+      composerExpanded: _landscape && (_composerFocused || _emojiOpen),
+      onCollapseComposer: _danmakuFocus.unfocus,
       onQuality: _openQualityPanel,
       onToggleFullscreen: _toggleOrientation,
       onOfficialSound: () => _switchSound(official: true),

@@ -79,11 +79,9 @@ class LiveLeg {
     final Stopwatch watch = Stopwatch()..start();
 
     await _setProperty('cache', 'yes');
-    // 这两个值只控制“向前预读”，不等于可回看时长；真实回看范围
-    // 由 DualLiveSession 读取 mpv 的 seekable-ranges 决定。
+    // 向前预读 40 秒，减少直播卡顿；只影响播放，不涉及回看。
     await _setProperty('cache-secs', '40');
     await _setProperty('demuxer-readahead-secs', '40');
-    await _setProperty('demuxer-seekable-cache', 'yes');
 
     await player.open(
       Media(source.url, httpHeaders: source.headers),
@@ -165,21 +163,6 @@ class LiveLeg {
       await Future<void>.delayed(const Duration(milliseconds: 100));
     }
     throw StateError('播放器已关闭');
-  }
-
-  /// 精确跳转：默认的 [Player.seek] 是 `absolute`（按关键帧），
-  /// 直播里会落到几秒前的关键帧，表现为「回到了直播但画面还是旧的」。
-  Future<void> seekExact(Duration position) async {
-    final NativePlayer? native = _native;
-    if (native == null) {
-      await player.seek(position);
-      return;
-    }
-    await native.command(<String>[
-      'seek',
-      (position.inMilliseconds / 1000).toStringAsFixed(3),
-      'absolute+exact',
-    ]);
   }
 
   Future<void> close() => _closing ??= _close();

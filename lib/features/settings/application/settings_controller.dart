@@ -74,7 +74,7 @@ class SettingsController extends Notifier<AppSettings> {
   }
 
   void setDanmakuArea(double area) {
-    _update(state.copyWith(danmakuArea: area.clamp(0.25, 1.0)));
+    _update(state.copyWith(danmakuArea: area.clamp(0.1, 1.0)));
   }
 
   void setDanmakuOpacity(double opacity) {
@@ -82,7 +82,7 @@ class SettingsController extends Notifier<AppSettings> {
   }
 
   void setDanmakuFontScale(double scale) {
-    _update(state.copyWith(danmakuFontScale: scale.clamp(0.6, 1.6)));
+    _update(state.copyWith(danmakuFontScale: scale.clamp(0.5, 2.0)));
   }
 
   void setDanmakuSpeed(double speed) {

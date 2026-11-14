@@ -18,6 +18,7 @@ class LiveQualityPanelOverlay extends StatelessWidget {
     super.key,
     required this.options,
     required this.currentQn,
+    required this.loggedIn,
     required this.onSelect,
     required this.onClose,
   });
@@ -26,6 +27,9 @@ class LiveQualityPanelOverlay extends StatelessWidget {
 
   /// 当前实际生效的档位。
   final int currentQn;
+
+  /// B 站账号是否已登录：未登录时高档位只提示「登录后可用」。
+  final bool loggedIn;
 
   final ValueChanged<int> onSelect;
   final VoidCallback onClose;
@@ -38,6 +42,7 @@ class LiveQualityPanelOverlay extends StatelessWidget {
       child: _QualityList(
         options: options,
         currentQn: currentQn,
+        loggedIn: loggedIn,
         onSelect: onSelect,
       ),
     );
@@ -49,11 +54,13 @@ class _QualityList extends StatelessWidget {
   const _QualityList({
     required this.options,
     required this.currentQn,
+    required this.loggedIn,
     required this.onSelect,
   });
 
   final List<LiveQuality> options;
   final int currentQn;
+  final bool loggedIn;
   final ValueChanged<int> onSelect;
 
   @override
@@ -70,36 +77,79 @@ class _QualityList extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           for (final LiveQuality option in options)
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
+            _QualityRow(
+              option: option,
+              selected: option.qn == currentQn,
+              locked: !loggedIn && option.requiresLogin,
+              compact: compact,
+              rowHeight: rowHeight,
               onTap: () => onSelect(option.qn),
-              child: Container(
-                height: rowHeight,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: option.qn == currentQn
-                      ? AppColors.primary
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(6),
-                ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 单个画质档位：未登录时高档位置灰，右侧提示「登录后可用」。
+class _QualityRow extends StatelessWidget {
+  const _QualityRow({
+    required this.option,
+    required this.selected,
+    required this.locked,
+    required this.compact,
+    required this.rowHeight,
+    required this.onTap,
+  });
+
+  final LiveQuality option;
+  final bool selected;
+  final bool locked;
+  final bool compact;
+  final double rowHeight;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color labelColor = selected
+        ? Colors.white
+        : (locked ? Colors.white30 : Colors.white70);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: locked ? null : onTap,
+      child: Container(
+        height: rowHeight,
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: <Widget>[
+            Text(
+              option.label,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: labelColor,
+                fontSize: compact ? 15 : 18.5,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+            if (locked)
+              Positioned(
+                right: 4,
                 child: Text(
-                  option.label,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  '登录后可用',
                   style: TextStyle(
-                    color: option.qn == currentQn
-                        ? Colors.white
-                        : Colors.white70,
-                    fontSize: compact ? 15 : 18.5,
-                    fontWeight: option.qn == currentQn
-                        ? FontWeight.w600
-                        : FontWeight.w400,
+                    fontSize: compact ? 8.5 : 9.5,
+                    color: AppColors.primary.withValues(alpha: 0.85),
                   ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

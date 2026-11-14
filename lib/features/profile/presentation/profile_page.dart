@@ -22,7 +22,7 @@ import '../../settings/domain/app_settings.dart';
 class ProfilePage extends ConsumerWidget {
   const ProfilePage({super.key});
 
-  static const String version = '1.1.1';
+  static const String version = '1.1.2';
 
   @override
   // ===== 页面骨架 =====

@@ -397,6 +397,9 @@ class LiveDanmakuInputBar extends StatefulWidget {
     required this.onSend,
     required this.onBlocked,
     required this.onEmoji,
+    this.compact = false,
+    this.controller,
+    this.focusNode,
   });
 
   /// 是否已选择弹幕来源；关闭时只提示，不允许输入。
@@ -411,21 +414,31 @@ class LiveDanmakuInputBar extends StatefulWidget {
   /// 未选择弹幕来源时点击输入框。
   final VoidCallback onBlocked;
 
-  /// 表情入口暂未开放。
+  /// 打开表情面板。
   final VoidCallback onEmoji;
+
+  /// 横屏紧凑版：高度与旁边的控制台图标对齐。
+  final bool compact;
+
+  /// 外部控制器：竖屏与横屏共用同一份输入内容。
+  final TextEditingController? controller;
+  final FocusNode? focusNode;
 
   @override
   State<LiveDanmakuInputBar> createState() => _LiveDanmakuInputBarState();
 }
 
 class _LiveDanmakuInputBarState extends State<LiveDanmakuInputBar> {
-  final TextEditingController _controller = TextEditingController();
-  final FocusNode _focus = FocusNode();
+  late final bool _ownsController = widget.controller == null;
+  late final TextEditingController _controller =
+      widget.controller ?? TextEditingController();
+  late final bool _ownsFocus = widget.focusNode == null;
+  late final FocusNode _focus = widget.focusNode ?? FocusNode();
 
   @override
   void dispose() {
-    _controller.dispose();
-    _focus.dispose();
+    if (_ownsController) _controller.dispose();
+    if (_ownsFocus) _focus.dispose();
     super.dispose();
   }
 
@@ -445,8 +458,13 @@ class _LiveDanmakuInputBarState extends State<LiveDanmakuInputBar> {
   @override
   Widget build(BuildContext context) {
     final bool canType = widget.enabled && !widget.sending;
+    final bool compact = widget.compact;
+    final double height = compact ? 32 : 46;
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      padding: compact
+          ? EdgeInsets.zero
+          : const EdgeInsets.fromLTRB(12, 10, 12, 10),
       child: Row(
         children: <Widget>[
           Expanded(
@@ -454,13 +472,16 @@ class _LiveDanmakuInputBarState extends State<LiveDanmakuInputBar> {
               behavior: HitTestBehavior.opaque,
               onTap: widget.enabled ? null : widget.onBlocked,
               child: Container(
-                height: 40,
-                padding: const EdgeInsets.only(left: 14, right: 8),
+                height: height,
+                padding: EdgeInsets.only(
+                  left: compact ? 12 : 16,
+                  right: compact ? 2 : 6,
+                ),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(20),
+                  color: Colors.white.withValues(alpha: 0.07),
+                  borderRadius: BorderRadius.circular(height / 2),
                   border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.08),
+                    color: Colors.white.withValues(alpha: 0.10),
                   ),
                 ),
                 child: Row(
@@ -474,20 +495,25 @@ class _LiveDanmakuInputBarState extends State<LiveDanmakuInputBar> {
                         maxLines: 1,
                         textInputAction: TextInputAction.send,
                         onSubmitted: (_) => _submit(),
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: Colors.white,
-                          fontSize: 13,
+                          fontSize: compact ? 12 : 13.5,
                         ),
                         cursorColor: AppColors.primary,
                         decoration: InputDecoration(
                           isDense: true,
                           counterText: '',
+                          // 主题默认给输入框填了底色，这里关掉：整条胶囊就是输入区。
+                          filled: false,
                           border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
                           contentPadding: EdgeInsets.zero,
                           hintText: widget.enabled ? '发个弹幕…' : '先在首页选择弹幕来源',
-                          hintStyle: const TextStyle(
-                            color: Colors.white30,
-                            fontSize: 12.5,
+                          hintStyle: TextStyle(
+                            color: Colors.white38,
+                            fontSize: compact ? 11.5 : 13,
                           ),
                         ),
                       ),
@@ -496,14 +522,14 @@ class _LiveDanmakuInputBarState extends State<LiveDanmakuInputBar> {
                       onPressed: widget.onEmoji,
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 28,
-                        minHeight: 28,
+                      constraints: BoxConstraints(
+                        minWidth: compact ? 26 : 28,
+                        minHeight: compact ? 26 : 28,
                       ),
                       icon: Icon(
                         Icons.emoji_emotions_outlined,
-                        size: 18,
-                        color: Colors.white.withValues(alpha: 0.28),
+                        size: compact ? 17 : 18,
+                        color: Colors.white.withValues(alpha: 0.35),
                       ),
                     ),
                   ],
@@ -511,15 +537,15 @@ class _LiveDanmakuInputBarState extends State<LiveDanmakuInputBar> {
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          SizedBox(width: compact ? 6 : 8),
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: canType
                 ? _submit
                 : (widget.enabled ? null : widget.onBlocked),
             child: Container(
-              width: 40,
-              height: 40,
+              width: height,
+              height: height,
               decoration: BoxDecoration(
                 color: canType
                     ? AppColors.primary
@@ -527,16 +553,16 @@ class _LiveDanmakuInputBarState extends State<LiveDanmakuInputBar> {
                 shape: BoxShape.circle,
               ),
               child: widget.sending
-                  ? const Padding(
-                      padding: EdgeInsets.all(11),
-                      child: CircularProgressIndicator(
+                  ? Padding(
+                      padding: EdgeInsets.all(compact ? 9 : 13),
+                      child: const CircularProgressIndicator(
                         strokeWidth: 2,
                         color: Colors.white70,
                       ),
                     )
                   : Icon(
                       Icons.send_rounded,
-                      size: 18,
+                      size: compact ? 16 : 18,
                       color: canType ? Colors.white : Colors.white38,
                     ),
             ),

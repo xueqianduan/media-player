@@ -37,6 +37,9 @@ class LiveControlOverlay extends StatelessWidget {
     required this.onToggleDanmaku,
     required this.onDanmakuSettings,
     required this.onSync,
+    this.composer,
+    this.composerExpanded = false,
+    this.onCollapseComposer,
     required this.onQuality,
     required this.onToggleFullscreen,
     required this.onOfficialSound,
@@ -68,6 +71,13 @@ class LiveControlOverlay extends StatelessWidget {
   final VoidCallback onToggleDanmaku;
   final VoidCallback onDanmakuSettings;
   final VoidCallback onSync;
+
+  /// 横屏弹幕输入区，放在弹幕设置与同步按钮之间；关闭弹幕时为空。
+  final Widget? composer;
+
+  /// 输入框获得焦点后占满整行，只保留输入区。
+  final bool composerExpanded;
+  final VoidCallback? onCollapseComposer;
   final VoidCallback onQuality;
   final VoidCallback onToggleFullscreen;
   final VoidCallback onOfficialSound;
@@ -114,10 +124,11 @@ class LiveControlOverlay extends StatelessWidget {
         ),
         Positioned(
           left: 8 + viewPadding.left,
+          right: 8 + viewPadding.right,
           bottom: 8 + viewPadding.bottom,
           child: Row(
             children: <Widget>[
-              if (landscape) ...<Widget>[
+              if (landscape && !composerExpanded) ...<Widget>[
                 LiveIconButton(
                   icon: paused ? Icons.play_arrow_rounded : Icons.pause_rounded,
                   onTap: ready ? onTogglePause : null,
@@ -136,40 +147,53 @@ class LiveControlOverlay extends StatelessWidget {
                   onTap: onToggleDanmaku,
                   tooltip: danmakuEnabled ? '关闭弹幕' : '开启弹幕',
                 ),
-                const SizedBox(width: 6),
+                if (danmakuEnabled) ...<Widget>[
+                  const SizedBox(width: 6),
+                  LiveIconButton(
+                    icon: Icons.display_settings_rounded,
+                    onTap: onDanmakuSettings,
+                    tooltip: '弹幕设置',
+                  ),
+                ],
+                if (composer != null) const SizedBox(width: 10),
+              ],
+              // 没有输入区时（关闭弹幕）让右侧图标保持靠右。
+              if (composer == null) const Spacer(),
+              if (composer != null)
+                // 输入区正好占满「弹幕设置」到「同步」之间这一段；
+                // 获得焦点后两侧图标收起，只剩输入区铺满整行。
+                Expanded(
+                  key: const ValueKey<String>('danmaku-composer'),
+                  child: composer!,
+                ),
+              if (composerExpanded) ...<Widget>[
+                const SizedBox(width: 4),
                 LiveIconButton(
-                  icon: Icons.tune_rounded,
-                  onTap: onDanmakuSettings,
-                  tooltip: '弹幕设置',
+                  icon: Icons.keyboard_hide_rounded,
+                  onTap: onCollapseComposer,
+                  tooltip: '收起输入',
+                ),
+              ] else ...<Widget>[
+                if (composer != null) const SizedBox(width: 10),
+                // 延迟调节放在画质左边，竖屏不提供。
+                LiveIconButton(
+                  icon: Icons.av_timer_rounded,
+                  onTap: onSync,
+                  tooltip: '同步 / 延迟',
                 ),
                 const SizedBox(width: 6),
+                if (hasQuality) ...<Widget>[
+                  _QualityChip(label: qualityLabel, onTap: onQuality),
+                  const SizedBox(width: 6),
+                ],
+                LiveIconButton(
+                  icon: landscape
+                      ? Icons.fullscreen_exit_rounded
+                      : Icons.fullscreen_rounded,
+                  onTap: onToggleFullscreen,
+                  tooltip: landscape ? '退出横屏' : '横屏观看',
+                ),
               ],
-            ],
-          ),
-        ),
-        Positioned(
-          right: 8 + viewPadding.right,
-          bottom: 8 + viewPadding.bottom,
-          child: Row(
-            children: <Widget>[
-              // 延迟调节放在画质左边，竖屏不提供。
-              LiveIconButton(
-                icon: Icons.sync_rounded,
-                onTap: onSync,
-                tooltip: '同步',
-              ),
-              const SizedBox(width: 6),
-              if (hasQuality) ...<Widget>[
-                _QualityChip(label: qualityLabel, onTap: onQuality),
-                const SizedBox(width: 6),
-              ],
-              LiveIconButton(
-                icon: landscape
-                    ? Icons.fullscreen_exit_rounded
-                    : Icons.fullscreen_rounded,
-                onTap: onToggleFullscreen,
-                tooltip: landscape ? '退出横屏' : '横屏观看',
-              ),
             ],
           ),
         ),

@@ -118,13 +118,13 @@ class AppSettings {
   /// 横屏飘屏是否开启。
   final bool danmakuEnabled;
 
-  /// 弹幕显示区域：屏幕高度的 25% / 50% / 75% / 100%。
+  /// 弹幕显示区域：屏幕高度的 10% / 25% / 50% / 75% / 100%。
   final double danmakuArea;
 
   /// 弹幕不透明度：0.2 ~ 1.0。
   final double danmakuOpacity;
 
-  /// 字号缩放：0.6 ~ 1.6。
+  /// 字号缩放：0.5 ~ 2.0。
   final double danmakuFontScale;
 
   /// 速度倍率：0.5 ~ 2.0，越大越快。
@@ -208,7 +208,7 @@ class AppSettings {
       screenshotTipShown: json['screenshotTipShown'] as bool? ?? false,
       danmakuEnabled: json['danmakuEnabled'] as bool? ?? true,
       danmakuArea: ((json['danmakuArea'] as num?)?.toDouble() ?? 0.5).clamp(
-        0.25,
+        0.1,
         1.0,
       ),
       danmakuOpacity: ((json['danmakuOpacity'] as num?)?.toDouble() ?? 0.8)
