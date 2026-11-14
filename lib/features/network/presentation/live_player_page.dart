@@ -437,6 +437,11 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
 
   // ===== 控制层显隐与横屏 =====
   void _toggleControls() {
+    // 正在输入弹幕时，点画面只是退出输入，控制台恢复原样。
+    if (_composerFocused) {
+      _danmakuFocus.unfocus();
+      return;
+    }
     setState(() {
       _controlsVisible = !_controlsVisible;
       if (!_controlsVisible) _emojiOpen = false;
@@ -642,7 +647,8 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
     final LiveRoom room = _danmakuRoom;
     setState(() => _sendingDanmaku = true);
     try {
-      final String? warning = await ref
+      // 返回值可能是服务端附带的无意义字符（例如 "f"），一律丢弃。
+      await ref
           .read(biliLiveApiProvider)
           .sendDanmaku(
             roomId: room.roomId,
@@ -651,10 +657,8 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
             csrf: csrf,
           );
       if (!mounted) return true;
-      // 发送成功不弹提示：自己的弹幕会出现在弹幕区里。
-      if (warning != null && warning.isNotEmpty) {
-        showToast(context, warning);
-      }
+      _danmakuFocus.unfocus();
+      // 发送成功一律静默：自己的弹幕会出现在弹幕区里。
       return true;
     } on Object catch (error) {
       if (mounted) showToast(context, '$error');
@@ -883,6 +887,10 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
       onPopInvokedWithResult: (bool didPop, Object? result) {
         if (didPop) return;
         // 面板打开时返回键先收起面板；横屏时先退出全屏，都不是直接离开播放页。
+        if (_composerFocused) {
+          _danmakuFocus.unfocus();
+          return;
+        }
         if (_emojiOpen) {
           _closeEmojiPanel();
           return;
