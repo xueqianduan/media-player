@@ -2,9 +2,9 @@
 // 功能：直播进度条
 //
 // 主要内容：
-// - 表示缓存窗口内的播放位置，可拖动回看
+// - 只使用播放器实际报告的可定位区间（seekable-ranges）
+// - 定位中 / 回到直播中显示进度状态，确认落点后再提交滑块位置
 // - 不在直播边缘时，右侧出现「回到直播」
-// - 在边缘时显示「直播中」红点
 // -------------------------------------------------------------------------
 
 import 'package:flutter/material.dart';
@@ -43,10 +43,10 @@ class _LiveProgressBarState extends State<LiveProgressBar> {
   @override
   Widget build(BuildContext context) {
     final LiveProgress progress = widget.progress;
-    final bool enabled = progress.available;
+    final bool busy = progress.seeking || progress.returning;
+    final bool enabled = progress.available && !busy;
     final double value = (_dragValue ?? progress.fraction).clamp(0.0, 1.0);
-    final bool behind =
-        enabled && (progress.lag > const Duration(seconds: 3) || value < 0.95);
+    final bool behind = progress.available && !progress.atLive && !busy;
 
     return Padding(
       padding: widget.compact
@@ -97,7 +97,11 @@ class _LiveProgressBarState extends State<LiveProgressBar> {
               ),
             ),
             const SizedBox(width: 6),
-            if (behind)
+            if (progress.returning)
+              _StatusChip(label: '回到直播中…', compact: widget.compact)
+            else if (progress.seeking)
+              _StatusChip(label: '定位中…', compact: widget.compact)
+            else if (behind)
               _GoLiveButton(
                 compact: widget.compact,
                 onTap: () {
@@ -109,6 +113,50 @@ class _LiveProgressBarState extends State<LiveProgressBar> {
               const _LiveBadge(),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 定位 / 回直播过程中的状态胶囊。
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({required this.label, required this.compact});
+
+  final String label;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 7 : 9,
+        vertical: compact ? 3.5 : 5,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          SizedBox(
+            width: compact ? 9 : 11,
+            height: compact ? 9 : 11,
+            child: const CircularProgressIndicator(
+              strokeWidth: 1.5,
+              color: Colors.white70,
+            ),
+          ),
+          SizedBox(width: compact ? 3 : 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: compact ? 10 : 10.5,
+            ),
+          ),
+        ],
       ),
     );
   }

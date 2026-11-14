@@ -79,6 +79,8 @@ class LiveLeg {
     final Stopwatch watch = Stopwatch()..start();
 
     await _setProperty('cache', 'yes');
+    // 这两个值只控制“向前预读”，不等于可回看时长；真实回看范围
+    // 由 DualLiveSession 读取 mpv 的 seekable-ranges 决定。
     await _setProperty('cache-secs', '40');
     await _setProperty('demuxer-readahead-secs', '40');
     await _setProperty('demuxer-seekable-cache', 'yes');

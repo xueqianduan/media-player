@@ -76,6 +76,9 @@ class BiliSessionService {
   /// 登录用户 UID（DedeUserID），匿名时为 0。
   int _userId = 0;
 
+  /// CSRF Token（bili_jct），发送弹幕时作为 csrf / csrf_token。
+  String? _csrf;
+
   /// 可附加到平台请求的 Cookie 头。已登录时包含 SESSDATA / bili_jct /
   /// DedeUserID，任何情况下都会补上 buvid3。
   String? get cookieHeader {
@@ -93,6 +96,9 @@ class BiliSessionService {
   /// 登录用户 UID，匿名为 0。
   int get userId => _userId;
 
+  /// 发送弹幕需要的 CSRF Token；未登录或缺少时为空。
+  String? get csrfToken => _csrf;
+
   bool get isLoggedIn => _cookie != null && _cookie!.isNotEmpty;
 
   // ------------------------------------------------------------------ 读取
@@ -104,6 +110,7 @@ class BiliSessionService {
     final String? csrf = await _storage.read(key: _kCsrf);
     final String? buvid = await _storage.read(key: _kBuvid3);
     _buvid3 = (buvid == null || buvid.isEmpty) ? null : buvid;
+    _csrf = csrf;
     if (sess == null || sess.isEmpty) return null;
 
     _userId = int.tryParse(uid ?? '') ?? 0;
@@ -165,6 +172,7 @@ class BiliSessionService {
     }
 
     _userId = int.tryParse(cookies['DedeUserID'] ?? '') ?? 0;
+    _csrf = cookies['bili_jct'];
     _cookie = _buildCookie(
       sess: sess,
       uid: cookies['DedeUserID'],
@@ -216,6 +224,7 @@ class BiliSessionService {
   Future<void> logout() async {
     _cookie = null;
     _userId = 0;
+    _csrf = null;
     // buvid3 是设备指纹，不属于账号，退出登录时保留，匿名弹幕仍需要它。
     await _storage.delete(key: _kSessData);
     await _storage.delete(key: _kUid);

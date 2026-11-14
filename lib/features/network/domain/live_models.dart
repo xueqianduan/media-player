@@ -179,54 +179,75 @@ class LivePlaylist {
   final int currentQn;
 }
 
-/// 直播进度：用户主动回拖的落后时长 + 可回退窗口。
+/// 直播进度：当前播放位置 + 播放器实际可定位的连续区间。
 ///
-/// 直播时缓存会一直领先播放位置，那不是「落后」，进度条应当保持满格。
-/// 这里只记录用户拖动产生的落后量：behind = 0 表示正在看直播。
+/// 区间来自 mpv 的 `seekable-ranges`，不是固定 40 秒窗口，也不是
+/// `demuxer-cache-duration` 推算值。区间之外不允许拖动，避免“看起来能拖、
+/// 实际定位失败又弹回”。
 class LiveProgress {
   const LiveProgress({
     this.position = Duration.zero,
-    this.behind = Duration.zero,
-    this.liveEdge = Duration.zero,
-    this.window = const Duration(seconds: 40),
+    this.rangeStart = Duration.zero,
+    this.rangeEnd = Duration.zero,
+    this.available = false,
+    this.seeking = false,
+    this.returning = false,
+    this.seekTarget,
   });
 
-  /// 当前播放位置（相对本路流起点），用于换算拖动目标。
+  /// 当前播放位置（相对本路流起点）。
   final Duration position;
 
-  /// 用户主动回拖造成的落后时长，0 表示在直播边缘。
-  final Duration behind;
+  /// 可定位区间起点。
+  final Duration rangeStart;
 
-  /// 缓存末尾的绝对时间，用于「回到直播」定位。
-  final Duration liveEdge;
+  /// 可定位区间终点（当前缓存中确实能 seek 到的最后位置）。
+  final Duration rangeEnd;
 
-  /// 可回退的最大窗口。
-  final Duration window;
+  /// 播放器是否已经报告了有效的可定位区间。
+  final bool available;
 
-  bool get available =>
-      liveEdge > const Duration(seconds: 1) && window > Duration.zero;
+  /// 正在执行一次定位，界面显示「定位中」。
+  final bool seeking;
 
-  /// 进度条比例：直播时恒为 1。
+  /// 正在重新取流回到直播，界面显示「回到直播中」。
+  final bool returning;
+
+  /// 本次定位的目标位置，仅用于诊断 / 展示。
+  final Duration? seekTarget;
+
+  /// 可回退时长。
+  Duration get window => rangeEnd - rangeStart;
+
+  /// 3 秒以内视为直播边缘。
+  bool get atLive =>
+      !available ||
+      (!seeking &&
+          !returning &&
+          rangeEnd - position <= const Duration(seconds: 3));
+
+  /// 进度条比例：直播时恒为 1，回看时按真实区间换算。
   double get fraction {
     if (!available || atLive) return 1;
-    final double value = 1 - behind.inMilliseconds / window.inMilliseconds;
-    return value.clamp(0.0, 1.0);
+    final int total = window.inMilliseconds;
+    if (total <= 0) return 1;
+    final int played = (position - rangeStart).inMilliseconds;
+    return (played / total).clamp(0.0, 1.0);
   }
 
-  /// 3 秒以内视为直播。
-  bool get atLive => !available || behind <= const Duration(seconds: 3);
+  /// 落后直播边缘的时长。
+  Duration get lag {
+    if (!available) return Duration.zero;
+    final Duration value = rangeEnd - position;
+    return value.isNegative ? Duration.zero : value;
+  }
 
-  /// 落后时长。
-  Duration get lag => behind;
-
-  /// 把滑块比例换算成绝对跳转位置。
+  /// 把滑块比例换算成区间内的绝对位置。
   Duration targetFor(double value) {
-    final int requestedMs =
-        ((1 - value.clamp(0.0, 1.0)) * window.inMilliseconds).round();
-    final Duration requested = Duration(milliseconds: requestedMs);
-    final Duration delta = behind - requested;
-    final Duration target = position + delta;
-    return target.isNegative ? Duration.zero : target;
+    if (!available) return position;
+    final double ratio = value.clamp(0.0, 1.0);
+    final int milliseconds = (window.inMilliseconds * ratio).round();
+    return rangeStart + Duration(milliseconds: milliseconds);
   }
 }
 

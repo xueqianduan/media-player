@@ -67,6 +67,39 @@ class SettingsController extends Notifier<AppSettings> {
     _update(state.copyWith(viewMode: mode));
   }
 
+  // ===== 直播飘屏弹幕 =====
+
+  void setDanmakuEnabled(bool enabled) {
+    _update(state.copyWith(danmakuEnabled: enabled));
+  }
+
+  void setDanmakuArea(double area) {
+    _update(state.copyWith(danmakuArea: area.clamp(0.25, 1.0)));
+  }
+
+  void setDanmakuOpacity(double opacity) {
+    _update(state.copyWith(danmakuOpacity: opacity.clamp(0.2, 1.0)));
+  }
+
+  void setDanmakuFontScale(double scale) {
+    _update(state.copyWith(danmakuFontScale: scale.clamp(0.6, 1.6)));
+  }
+
+  void setDanmakuSpeed(double speed) {
+    _update(state.copyWith(danmakuSpeed: speed.clamp(0.5, 2.0)));
+  }
+
+  void resetDanmakuStyle() {
+    _update(
+      state.copyWith(
+        danmakuArea: 0.5,
+        danmakuOpacity: 0.8,
+        danmakuFontScale: 1.0,
+        danmakuSpeed: 1.0,
+      ),
+    );
+  }
+
   void toggleViewMode() {
     setViewMode(
       state.viewMode == ViewMode.list ? ViewMode.grid : ViewMode.list,

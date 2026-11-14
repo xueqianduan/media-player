@@ -59,6 +59,11 @@ class AppSettings {
     this.longPressSpeed = 2.0,
     this.videoScaleMode = VideoScaleMode.fit,
     this.screenshotTipShown = false,
+    this.danmakuEnabled = true,
+    this.danmakuArea = 0.5,
+    this.danmakuOpacity = 0.8,
+    this.danmakuFontScale = 1.0,
+    this.danmakuSpeed = 1.0,
   });
 
   /// 播放倍速：0.5x ~ 5.0x。
@@ -108,6 +113,23 @@ class AppSettings {
   /// 是否已经提示过「截图会保存到相册」。
   final bool screenshotTipShown;
 
+  // ===== 直播飘屏弹幕（横屏） =====
+
+  /// 横屏飘屏是否开启。
+  final bool danmakuEnabled;
+
+  /// 弹幕显示区域：屏幕高度的 25% / 50% / 75% / 100%。
+  final double danmakuArea;
+
+  /// 弹幕不透明度：0.2 ~ 1.0。
+  final double danmakuOpacity;
+
+  /// 字号缩放：0.6 ~ 1.6。
+  final double danmakuFontScale;
+
+  /// 速度倍率：0.5 ~ 2.0，越大越快。
+  final double danmakuSpeed;
+
   AppSettings copyWith({
     AppThemeMode? themeMode,
     double? defaultSpeed,
@@ -120,6 +142,11 @@ class AppSettings {
     double? longPressSpeed,
     VideoScaleMode? videoScaleMode,
     bool? screenshotTipShown,
+    bool? danmakuEnabled,
+    double? danmakuArea,
+    double? danmakuOpacity,
+    double? danmakuFontScale,
+    double? danmakuSpeed,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -133,6 +160,11 @@ class AppSettings {
       longPressSpeed: longPressSpeed ?? this.longPressSpeed,
       videoScaleMode: videoScaleMode ?? this.videoScaleMode,
       screenshotTipShown: screenshotTipShown ?? this.screenshotTipShown,
+      danmakuEnabled: danmakuEnabled ?? this.danmakuEnabled,
+      danmakuArea: danmakuArea ?? this.danmakuArea,
+      danmakuOpacity: danmakuOpacity ?? this.danmakuOpacity,
+      danmakuFontScale: danmakuFontScale ?? this.danmakuFontScale,
+      danmakuSpeed: danmakuSpeed ?? this.danmakuSpeed,
     );
   }
 
@@ -148,6 +180,11 @@ class AppSettings {
     'longPressSpeed': longPressSpeed,
     'videoScaleMode': videoScaleMode.name,
     'screenshotTipShown': screenshotTipShown,
+    'danmakuEnabled': danmakuEnabled,
+    'danmakuArea': danmakuArea,
+    'danmakuOpacity': danmakuOpacity,
+    'danmakuFontScale': danmakuFontScale,
+    'danmakuSpeed': danmakuSpeed,
   };
 
   static AppSettings fromJson(Map<String, dynamic> json) {
@@ -169,6 +206,19 @@ class AppSettings {
       longPressSpeed: (json['longPressSpeed'] as num?)?.toDouble() ?? 2.0,
       videoScaleMode: VideoScaleMode.parse(json['videoScaleMode'] as String?),
       screenshotTipShown: json['screenshotTipShown'] as bool? ?? false,
+      danmakuEnabled: json['danmakuEnabled'] as bool? ?? true,
+      danmakuArea: ((json['danmakuArea'] as num?)?.toDouble() ?? 0.5).clamp(
+        0.25,
+        1.0,
+      ),
+      danmakuOpacity: ((json['danmakuOpacity'] as num?)?.toDouble() ?? 0.8)
+          .clamp(0.2, 1.0),
+      danmakuFontScale: ((json['danmakuFontScale'] as num?)?.toDouble() ?? 1.0)
+          .clamp(0.6, 1.6),
+      danmakuSpeed: ((json['danmakuSpeed'] as num?)?.toDouble() ?? 1.0).clamp(
+        0.5,
+        2.0,
+      ),
     );
   }
 }

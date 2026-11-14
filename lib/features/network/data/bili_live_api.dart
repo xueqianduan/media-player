@@ -408,6 +408,128 @@ class BiliLiveApi {
     );
   }
 
+  /// 发送弹幕。需要登录态（SESSDATA）与 CSRF Token（bili_jct）。
+  ///
+  /// 成功返回可忽略的提示（通常为空）；失败抛出带中文提示的
+  /// [LiveApiException]。调用方需先确保 [cookie] 与 [csrf] 非空。
+  Future<String?> sendDanmaku({
+    required int roomId,
+    required String text,
+    required String cookie,
+    required String csrf,
+  }) async {
+    final String message = text.trim();
+    if (message.isEmpty) {
+      throw const LiveApiException('弹幕内容不能为空');
+    }
+    if (message.runes.length > 20) {
+      throw const LiveApiException('弹幕最多 20 个字');
+    }
+    if (cookie.isEmpty || csrf.isEmpty) {
+      throw const LiveApiException('登录信息缺失，请重新登录 B 站账号');
+    }
+
+    final Map<String, String> form = <String, String>{
+      'bubble': '0',
+      'color': '16777215',
+      'fontsize': '25',
+      'mode': '1',
+      'msg': message,
+      'rnd': '${DateTime.now().millisecondsSinceEpoch ~/ 1000}',
+      'roomid': '$roomId',
+      'csrf': csrf,
+      'csrf_token': csrf,
+    };
+
+    final HttpClientRequest request;
+    try {
+      request = await _client
+          .postUrl(Uri.https('api.live.bilibili.com', '/msg/send'))
+          .timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      throw const LiveApiException('发送请求超时，请检查网络后重试');
+    } on SocketException {
+      throw const LiveApiException('无法连接网络，弹幕未发送');
+    }
+
+    request.headers.set(HttpHeaders.userAgentHeader, _userAgent);
+    request.headers.set('Referer', 'https://live.bilibili.com/$roomId');
+    request.headers.set('Origin', 'https://live.bilibili.com');
+    request.headers.set('Accept', 'application/json, text/plain, */*');
+    request.headers.set(HttpHeaders.cookieHeader, cookie);
+    request.headers.contentType = ContentType(
+      'application',
+      'x-www-form-urlencoded',
+      charset: 'utf-8',
+    );
+    request.write(Uri(queryParameters: form).query);
+
+    final HttpClientResponse response;
+    final String body;
+    try {
+      response = await request.close().timeout(const Duration(seconds: 12));
+      body = await utf8.decoder
+          .bind(response)
+          .join()
+          .timeout(const Duration(seconds: 12));
+    } on TimeoutException {
+      request.abort();
+      throw const LiveApiException('发送结果未知，请回到直播间确认是否已发出');
+    } on SocketException {
+      request.abort();
+      throw const LiveApiException('发送过程中网络中断，弹幕可能未发出');
+    }
+
+    if (response.statusCode != 200) {
+      throw LiveApiException(
+        '弹幕发送失败（HTTP ${response.statusCode}）',
+        status: response.statusCode,
+      );
+    }
+
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(body);
+    } on FormatException {
+      throw const LiveApiException('发送结果无法解析，请回到直播间确认');
+    }
+    final Map<String, dynamic> root = _jsonMap(decoded);
+    final int code = _jsonInt(root['code']);
+    final String apiMessage = _plainText(root['message'] ?? root['msg']);
+    if (code != 0) {
+      throw LiveApiException(_sendError(code, apiMessage), status: code);
+    }
+
+    // code 0 时个别情况仍会带一句提示（例如「发送成功」），只在有实际信息时返回。
+    if (apiMessage.isEmpty || apiMessage == '0' || apiMessage.contains('成功')) {
+      return null;
+    }
+    return apiMessage;
+  }
+
+  static String _sendError(int code, String message) {
+    switch (code) {
+      case -101:
+        return '登录已失效，请重新登录 B 站账号';
+      case -111:
+        return '登录凭证校验失败，请重新登录';
+      case -400:
+        // 未登录 / CSRF 失效时 B 站也返回 -400「请求错误」，先提示检查登录。
+        return message.isEmpty || message == '请求错误'
+            ? '发送请求被拒绝，请确认 B 站登录状态后重试'
+            : '弹幕内容不合法：$message';
+      case -403:
+        return '当前账号没有发送权限（可能被禁言或未实名）';
+      case -352:
+        return 'B站风控拦截了本次发送，请稍后重试';
+      case 10031:
+      case 1003212:
+        return '发送太快了，请稍后再试';
+      default:
+        return message.isEmpty ? '弹幕发送失败（$code）' : '弹幕发送失败（$code）：$message';
+    }
+  }
+
   /// 从用户输入中解析房间号：支持纯数字、live.bilibili.com/12345 等。
   static int? parseRoomInput(String input) {
     final String text = input.trim();

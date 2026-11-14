@@ -3,8 +3,8 @@
 //
 // 主要内容：
 // - 左上：原声 / 解说切换
-// - 左下：同步；横屏时补上暂停与刷新
-// - 右下：画质胶囊与横竖屏切换
+// - 左下：横屏时暂停、刷新、弹幕开关与弹幕设置
+// - 右下：同步、画质胶囊与横竖屏切换
 // - 上下渐变遮罩，保证控件在亮画面上可读
 // -------------------------------------------------------------------------
 
@@ -33,6 +33,9 @@ class LiveControlOverlay extends StatelessWidget {
     required this.qualityLabel,
     required this.onTogglePause,
     required this.onRefresh,
+    required this.danmakuEnabled,
+    required this.onToggleDanmaku,
+    required this.onDanmakuSettings,
     required this.onSync,
     required this.onQuality,
     required this.onToggleFullscreen,
@@ -61,6 +64,9 @@ class LiveControlOverlay extends StatelessWidget {
 
   final VoidCallback onTogglePause;
   final VoidCallback onRefresh;
+  final bool danmakuEnabled;
+  final VoidCallback onToggleDanmaku;
+  final VoidCallback onDanmakuSettings;
   final VoidCallback onSync;
   final VoidCallback onQuality;
   final VoidCallback onToggleFullscreen;
@@ -123,6 +129,20 @@ class LiveControlOverlay extends StatelessWidget {
                   tooltip: '刷新画面源',
                 ),
                 const SizedBox(width: 6),
+                LiveIconButton(
+                  icon: danmakuEnabled
+                      ? Icons.subtitles_rounded
+                      : Icons.subtitles_off_rounded,
+                  onTap: onToggleDanmaku,
+                  tooltip: danmakuEnabled ? '关闭弹幕' : '开启弹幕',
+                ),
+                const SizedBox(width: 6),
+                LiveIconButton(
+                  icon: Icons.tune_rounded,
+                  onTap: onDanmakuSettings,
+                  tooltip: '弹幕设置',
+                ),
+                const SizedBox(width: 6),
               ],
             ],
           ),
@@ -134,7 +154,7 @@ class LiveControlOverlay extends StatelessWidget {
             children: <Widget>[
               // 延迟调节放在画质左边，竖屏不提供。
               LiveIconButton(
-                icon: Icons.tune_rounded,
+                icon: Icons.sync_rounded,
                 onTap: onSync,
                 tooltip: '同步',
               ),

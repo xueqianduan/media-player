@@ -4,7 +4,7 @@
 // 主要内容：
 // - 顶部双源头像（画面源 / 声音源）与房间信息
 // - 画面区、点击呼出控制层、横屏全屏观看
-// - 实时弹幕（WebSocket 接收）与弹幕输入栏（发送后续接入）
+// - 实时弹幕（WebSocket 接收 / 发送）、横屏飘屏与弹幕设置
 // - 声音切换、暂停、同步调节、画质切换
 // -------------------------------------------------------------------------
 
@@ -22,15 +22,20 @@ import 'package:volume_controller/volume_controller.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/ui_kit.dart';
+import '../../settings/application/settings_controller.dart';
+import '../../settings/domain/app_settings.dart';
 import '../application/bili_account_controller.dart';
 import '../application/network_controller.dart';
 import '../data/danmaku_client.dart';
 import '../data/dual_live_session.dart';
 import '../domain/danmaku_models.dart';
 import '../domain/live_models.dart';
+import 'bili_login_page.dart';
 import 'widgets/live_control_overlay.dart';
 import 'widgets/live_console_header.dart';
+import 'widgets/live_danmaku_overlay.dart';
 import 'widgets/live_danmaku_panel.dart';
+import 'widgets/live_danmaku_settings_panel.dart';
 import 'widgets/live_portrait_control_bar.dart';
 import 'widgets/live_progress_bar.dart';
 import 'widgets/live_quality_panel.dart';
@@ -85,13 +90,21 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
   /// 同步面板是否从右侧展开。
   bool _syncOpen = false;
 
+  /// 弹幕设置面板是否从右侧展开。
+  bool _danmakuSettingsOpen = false;
+
   // ===== 弹幕 =====
   DanmakuClient? _danmaku;
   final List<DanmakuMessage> _danmakuMessages = <DanmakuMessage>[];
   final List<DanmakuMessage> _danmakuBuffer = <DanmakuMessage>[];
+
+  /// 横屏飘屏的实时消息源：只发给当前订阅者，转屏不重放历史。
+  final StreamController<DanmakuMessage> _danmakuFeed =
+      StreamController<DanmakuMessage>.broadcast();
   DanmakuStatus _danmakuStatus = DanmakuStatus.idle;
   String? _danmakuError;
   Timer? _danmakuFlush;
+  bool _sendingDanmaku = false;
 
   /// 列表上限：只保留最近 200 条，避免长时间挂机后内存持续增长。
   static const int _danmakuLimit = 200;
@@ -247,6 +260,9 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
 
   void _onDanmakuMessage(DanmakuMessage message) {
     if (!mounted) return;
+    // 横屏飘屏直接吃原始消息，不等 250ms 批量刷新。
+    if (!_danmakuFeed.isClosed) _danmakuFeed.add(message);
+
     // 热门直播间每秒可能有几十条：先入缓冲，250ms 合并刷新一次，
     // 避免每条弹幕都 setState 重建整个播放页。
     _danmakuBuffer.add(message);
@@ -442,7 +458,10 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
       await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
     if (!mounted) return;
-    setState(() => _controlsVisible = true);
+    setState(() {
+      _controlsVisible = true;
+      _danmakuSettingsOpen = false;
+    });
     _scheduleHide();
     debugPrint(
       '[LumiPlayer] orientation -> ${_landscape ? 'landscape' : 'portrait'} '
@@ -497,6 +516,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
     setState(() {
       _qualityOpen = true;
       _syncOpen = false;
+      _danmakuSettingsOpen = false;
       _controlsVisible = true;
     });
   }
@@ -539,6 +559,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
     setState(() {
       _syncOpen = true;
       _qualityOpen = false;
+      _danmakuSettingsOpen = false;
       _controlsVisible = true;
     });
   }
@@ -549,11 +570,124 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
     _scheduleHide();
   }
 
+  // ===== 弹幕设置 / 开关 / 发送 =====
+  void _openDanmakuSettings() {
+    _hideTimer?.cancel();
+    setState(() {
+      _danmakuSettingsOpen = true;
+      _qualityOpen = false;
+      _syncOpen = false;
+      _controlsVisible = true;
+    });
+  }
+
+  void _closeDanmakuSettings() {
+    if (!_danmakuSettingsOpen) return;
+    setState(() => _danmakuSettingsOpen = false);
+    _scheduleHide();
+  }
+
+  void _toggleDanmaku() {
+    final bool next = !ref.read(settingsControllerProvider).danmakuEnabled;
+    ref.read(settingsControllerProvider.notifier).setDanmakuEnabled(next);
+    showToast(context, next ? '弹幕已开启' : '弹幕已关闭');
+    _scheduleHide();
+  }
+
+  Future<bool> _sendDanmaku(String text) async {
+    if (_sendingDanmaku) return false;
+    if (!await _ensureBiliLoginForSend()) return false;
+    if (!mounted) return false;
+
+    final session = ref.read(biliSessionProvider);
+    final String? csrf = session.csrfToken;
+    if (!session.isLoggedIn || csrf == null || csrf.isEmpty) {
+      if (mounted) showToast(context, '登录信息不完整，请重新登录 B 站账号');
+      return false;
+    }
+
+    final LiveRoom room = _danmakuRoom;
+    setState(() => _sendingDanmaku = true);
+    try {
+      final String? warning = await ref
+          .read(biliLiveApiProvider)
+          .sendDanmaku(
+            roomId: room.roomId,
+            text: text,
+            cookie: session.cookieHeader ?? '',
+            csrf: csrf,
+          );
+      if (!mounted) return true;
+      if (warning != null && warning.isNotEmpty) {
+        showToast(context, warning);
+      } else {
+        showToast(context, '弹幕已发送');
+      }
+      return true;
+    } on Object catch (error) {
+      if (mounted) showToast(context, '$error');
+      return false;
+    } finally {
+      if (mounted) setState(() => _sendingDanmaku = false);
+    }
+  }
+
+  /// 未登录时提示并打开 B 站官方登录页；登录成功后本次发送会继续。
+  Future<bool> _ensureBiliLoginForSend() async {
+    final session = ref.read(biliSessionProvider);
+    if (session.isLoggedIn && (session.csrfToken?.isNotEmpty ?? false)) {
+      return true;
+    }
+
+    final bool? go = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1A1E2A),
+          title: const Text(
+            '需要登录 B 站账号',
+            style: TextStyle(color: Colors.white, fontSize: 16),
+          ),
+          content: const Text(
+            '发送弹幕前需要先登录 B 站账号，登录成功后会自动继续发送。',
+            style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.5),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('取消', style: TextStyle(color: Colors.white54)),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('去登录'),
+            ),
+          ],
+        );
+      },
+    );
+    if (go != true || !mounted) return false;
+
+    final bool? ok = await showBiliLoginPage(context);
+    if (ok != true || !mounted) return false;
+
+    final updated = ref.read(biliSessionProvider);
+    if (!updated.isLoggedIn || (updated.csrfToken?.isEmpty ?? true)) {
+      if (mounted) showToast(context, '登录信息不完整，请重试');
+      return false;
+    }
+    return true;
+  }
+
+  void _showEmojiComingSoon() {
+    showToast(context, '表情弹幕将在后续版本开放');
+  }
+
   @override
   void dispose() {
     _hideTimer?.cancel();
     _hintTimer?.cancel();
     _danmakuFlush?.cancel();
+    unawaited(_danmakuFeed.close());
     if (kDebugMode) {
       SchedulerBinding.instance.removeTimingsCallback(_onFrameTimings);
     }
@@ -588,10 +722,15 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
   // ===== 页面骨架 =====
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: !_landscape && !_qualityOpen && !_syncOpen,
+      canPop:
+          !_landscape && !_qualityOpen && !_syncOpen && !_danmakuSettingsOpen,
       onPopInvokedWithResult: (bool didPop, Object? result) {
         if (didPop) return;
         // 面板打开时返回键先收起面板；横屏时先退出全屏，都不是直接离开播放页。
+        if (_danmakuSettingsOpen) {
+          _closeDanmakuSettings();
+          return;
+        }
         if (_syncOpen) {
           _closeSyncPanel();
           return;
@@ -632,6 +771,33 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
                   onClose: _closeQualityPanel,
                 ),
               ),
+            if (_danmakuSettingsOpen)
+              Positioned.fill(
+                // 只让面板订阅设置，拖动滑块时不会重建视频层。
+                child: Consumer(
+                  builder:
+                      (BuildContext context, WidgetRef ref, Widget? child) {
+                        final AppSettings settings = ref.watch(
+                          settingsControllerProvider,
+                        );
+                        final SettingsController controller = ref.read(
+                          settingsControllerProvider.notifier,
+                        );
+                        return LiveDanmakuSettingsPanel(
+                          area: settings.danmakuArea,
+                          opacity: settings.danmakuOpacity,
+                          fontScale: settings.danmakuFontScale,
+                          speed: settings.danmakuSpeed,
+                          onAreaChanged: controller.setDanmakuArea,
+                          onOpacityChanged: controller.setDanmakuOpacity,
+                          onFontScaleChanged: controller.setDanmakuFontScale,
+                          onSpeedChanged: controller.setDanmakuSpeed,
+                          onReset: controller.resetDanmakuStyle,
+                          onClose: _closeDanmakuSettings,
+                        );
+                      },
+                ),
+              ),
           ],
         ),
       ),
@@ -667,7 +833,13 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
             error: _danmakuError,
           ),
         ),
-        LiveDanmakuInputBar(onTap: _showDanmakuComingSoon),
+        LiveDanmakuInputBar(
+          enabled: widget.args.danmaku != DanmakuSource.off,
+          sending: _sendingDanmaku,
+          onSend: _sendDanmaku,
+          onBlocked: () => showToast(context, '先在首页选择弹幕来源'),
+          onEmoji: _showEmojiComingSoon,
+        ),
       ],
     );
   }
@@ -686,7 +858,33 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
             child: _buildVideo(BoxFit.contain),
           ),
         ),
-        if (_controlsVisible) _buildOverlay(context),
+        // 飘屏在画面之上、控制层之下，不拦截点击。
+        Consumer(
+          builder: (BuildContext context, WidgetRef ref, Widget? child) {
+            final AppSettings settings = ref.watch(settingsControllerProvider);
+            return LiveDanmakuOverlay(
+              messages: _danmakuFeed.stream,
+              paused: _paused,
+              enabled: settings.danmakuEnabled,
+              area: settings.danmakuArea,
+              opacity: settings.danmakuOpacity,
+              fontScale: settings.danmakuFontScale,
+              speed: settings.danmakuSpeed,
+            );
+          },
+        ),
+        if (_controlsVisible)
+          Consumer(
+            builder: (BuildContext context, WidgetRef ref, Widget? child) {
+              final AppSettings settings = ref.watch(
+                settingsControllerProvider,
+              );
+              return _buildOverlay(
+                context,
+                danmakuEnabled: settings.danmakuEnabled,
+              );
+            },
+          ),
         if (_controlsVisible)
           Positioned(left: 0, right: 0, bottom: 48, child: _buildProgress()),
         _buildGestureHint(),
@@ -816,7 +1014,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
   }
 
   /// 画面控制层：具体摆放交给 [LiveControlOverlay]，这里只接线。
-  Widget _buildOverlay(BuildContext context) {
+  Widget _buildOverlay(BuildContext context, {required bool danmakuEnabled}) {
     final DualLiveSession? session = _session;
     return LiveControlOverlay(
       picture: widget.args.picture,
@@ -845,6 +1043,9 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
       qualityLabel: LiveQuality.labelOf(_qn),
       onTogglePause: _togglePause,
       onRefresh: _refreshPicture,
+      danmakuEnabled: danmakuEnabled,
+      onToggleDanmaku: _toggleDanmaku,
+      onDanmakuSettings: _openDanmakuSettings,
       onSync: _openSyncPanel,
       onQuality: _openQualityPanel,
       onToggleFullscreen: _toggleOrientation,
@@ -903,9 +1104,5 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
         ),
       ),
     );
-  }
-
-  void _showDanmakuComingSoon() {
-    showToast(context, '发送弹幕将在下一版开放');
   }
 }

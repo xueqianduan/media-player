@@ -388,14 +388,63 @@ class _SuperChatRow extends StatelessWidget {
   }
 }
 
-/// 底部弹幕输入栏：发送能力等下一版开放。
-class LiveDanmakuInputBar extends StatelessWidget {
-  const LiveDanmakuInputBar({super.key, required this.onTap});
+/// 底部弹幕输入栏：输入、发送；未登录时由页面拉起 B 站登录。
+class LiveDanmakuInputBar extends StatefulWidget {
+  const LiveDanmakuInputBar({
+    super.key,
+    required this.enabled,
+    required this.sending,
+    required this.onSend,
+    required this.onBlocked,
+    required this.onEmoji,
+  });
 
-  final VoidCallback onTap;
+  /// 是否已选择弹幕来源；关闭时只提示，不允许输入。
+  final bool enabled;
+
+  /// 正在发送，按钮显示进度并禁止重复提交。
+  final bool sending;
+
+  /// 返回 true 表示发送成功，输入框会清空。
+  final Future<bool> Function(String text) onSend;
+
+  /// 未选择弹幕来源时点击输入框。
+  final VoidCallback onBlocked;
+
+  /// 表情入口暂未开放。
+  final VoidCallback onEmoji;
+
+  @override
+  State<LiveDanmakuInputBar> createState() => _LiveDanmakuInputBarState();
+}
+
+class _LiveDanmakuInputBarState extends State<LiveDanmakuInputBar> {
+  final TextEditingController _controller = TextEditingController();
+  final FocusNode _focus = FocusNode();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (widget.sending || !widget.enabled) return;
+    final String text = _controller.text.trim();
+    if (text.isEmpty) {
+      _focus.requestFocus();
+      return;
+    }
+    final bool ok = await widget.onSend(text);
+    if (!mounted || !ok) return;
+    _controller.clear();
+    _focus.unfocus();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final bool canType = widget.enabled && !widget.sending;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       child: Row(
@@ -403,10 +452,10 @@ class LiveDanmakuInputBar extends StatelessWidget {
           Expanded(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: onTap,
+              onTap: widget.enabled ? null : widget.onBlocked,
               child: Container(
                 height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
+                padding: const EdgeInsets.only(left: 14, right: 8),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(20),
@@ -416,15 +465,46 @@ class LiveDanmakuInputBar extends StatelessWidget {
                 ),
                 child: Row(
                   children: <Widget>[
-                    const Text(
-                      '发个弹幕…',
-                      style: TextStyle(color: Colors.white30, fontSize: 12.5),
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        focusNode: _focus,
+                        enabled: canType,
+                        maxLength: 20,
+                        maxLines: 1,
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: (_) => _submit(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                        ),
+                        cursorColor: AppColors.primary,
+                        decoration: InputDecoration(
+                          isDense: true,
+                          counterText: '',
+                          border: InputBorder.none,
+                          contentPadding: EdgeInsets.zero,
+                          hintText: widget.enabled ? '发个弹幕…' : '先在首页选择弹幕来源',
+                          hintStyle: const TextStyle(
+                            color: Colors.white30,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      ),
                     ),
-                    const Spacer(),
-                    Icon(
-                      Icons.emoji_emotions_outlined,
-                      size: 18,
-                      color: Colors.white.withValues(alpha: 0.25),
+                    IconButton(
+                      onPressed: widget.onEmoji,
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 28,
+                        minHeight: 28,
+                      ),
+                      icon: Icon(
+                        Icons.emoji_emotions_outlined,
+                        size: 18,
+                        color: Colors.white.withValues(alpha: 0.28),
+                      ),
                     ),
                   ],
                 ),
@@ -434,19 +514,31 @@ class LiveDanmakuInputBar extends StatelessWidget {
           const SizedBox(width: 8),
           GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: onTap,
+            onTap: canType
+                ? _submit
+                : (widget.enabled ? null : widget.onBlocked),
             child: Container(
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.35),
+                color: canType
+                    ? AppColors.primary
+                    : AppColors.primary.withValues(alpha: 0.25),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
-                Icons.send_rounded,
-                size: 18,
-                color: Colors.white70,
-              ),
+              child: widget.sending
+                  ? const Padding(
+                      padding: EdgeInsets.all(11),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white70,
+                      ),
+                    )
+                  : Icon(
+                      Icons.send_rounded,
+                      size: 18,
+                      color: canType ? Colors.white : Colors.white38,
+                    ),
             ),
           ),
         ],

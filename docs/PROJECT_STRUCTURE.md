@@ -1,7 +1,7 @@
 # LumiPlayer `lib/` 目录结构说明
 
 > 统计时间：2026-11-14　版本 `1.1.1+7`  
-> 范围：仅 `lib/`（82 个 Dart 文件，约 24,400 行）  
+> 范围：仅 `lib/`（84 个 Dart 文件，约 25,800 行）  
 > 本文回答：每个文件夹是干什么的、里面有哪些文件、每个文件负责什么。
 
 
@@ -198,20 +198,20 @@ lib/
 
 | 文件 | 行数 | 作用 | 关键内容 |
 | --- | --- | --- | --- |
-| `live_models.dart` | 480 | 直播领域模型 | `LiveRoom`、`LiveStream`、`LiveQuality`、`LivePlaylist`、`LivePreset`、`SavedLivePreset`、`LiveProgress`、`LiveFavorite`、`NetworkVideo`、`NetworkState`；`DanmakuSource` 枚举 |
+| `live_models.dart` | 501 | 直播领域模型 | `LiveRoom`、`LiveStream`、`LiveQuality`、`LivePlaylist`、`LivePreset`、`SavedLivePreset`、`LiveProgress`、`LiveFavorite`、`NetworkVideo`、`NetworkState`；`DanmakuSource` 枚举 |
 | `danmaku_models.dart` | 60 | 弹幕模型 | `DanmakuMessage`（普通弹幕 / 醒目留言 / 表情）、`DanmakuStatus` 连接状态枚举 |
 
 ### 9.2 `network/data/`
 
 | 文件 | 行数 | 作用 | 关键内容 |
 | --- | --- | --- | --- |
-| `bili_live_api.dart` | 468 | 直播接口封装 | 搜索（412 带 `buvid3` 重试）、`isLive`、`roomDetail`、`resolve` 取流（flv / ts / fmp4 三类候选）、中文错误映射 |
-| `bili_session.dart` | 357 | 账号会话 | 内嵌网页登录后的 Cookie 校验、`/x/web-interface/nav` 取资料、`buvid3` 领取与持久化、`DedeUserID`、`flutter_secure_storage` 保存与恢复 |
+| `bili_live_api.dart` | 590 | 直播接口封装与发送 | 搜索（412 带 `buvid3` 重试）、`isLive`、`roomDetail`、`resolve` 取流（flv / ts / fmp4）、`sendDanmaku`（CSRF + 中文错误映射） |
+| `bili_session.dart` | 366 | 账号会话 | 内嵌网页登录后的 Cookie 校验、`/x/web-interface/nav` 取资料、`buvid3` 领取与持久化、`DedeUserID`、`flutter_secure_storage` 保存与恢复 |
 | `bili_wbi.dart` | 448 | WBI 签名 | 取 `wbi_img` 生成 `mixinKey`、补 `wts` 计算 `w_rid`；纯 Dart MD5 实现（不引三方包） |
 | `danmaku_client.dart` | 636 | 弹幕客户端 | `getDanmuInfo`（WBI）、WebSocket 鉴权 op=7、25 秒心跳、70 秒超时、deflate 解包、`DANMU_MSG` / `SUPER_CHAT_MESSAGE` 解析、指数退避重连 |
 | `bili_cookie_bridge.dart` | 54 | 原生 Cookie 桥 | `lumiplayer/bili_cookie` 通道：读取 / 清理 WebView Cookie |
 | `live_leg.dart` | 198 | 单路播放器 | mpv 缓存参数、首帧与错误流赛跑、`seekExact` 精确跳转 |
-| `dual_live_session.dart` | 699 | 双路会话 | 线路回退（两轮取流）、画面先播 + 解说后台连接、声音切换、暂停、同步校准、画质切换、刷新画面源、进度与 seek |
+| `dual_live_session.dart` | 931 | 双路会话 | 线路回退、画面先播 + 解说后台连接、声音切换、暂停、同步、画质、刷新；进度基于 `seekable-ranges`，定位校验后提交，回到直播重新取流 |
 | `network_repository.dart` | 135 | 网络模块持久化 | 收藏房间、上次组合、收藏组合（`savedPresets`）、网络视频直链 |
 
 ### 9.3 `network/application/`
@@ -227,7 +227,7 @@ lib/
 | --- | --- | --- | --- |
 | `network_page.dart` | 1575 | 网络首页 | 直播/视频分段、账号卡、双路来源、我的组合、我的收藏、添加链接 |
 | `live_search_page.dart` | 657 | 直播搜索 | 420ms 防抖、`_sequence` 竞态保护、房间号直连 |
-| `live_player_page.dart` | 911 | 直播控制台 | 竖屏信息条 + 画面底部控制条、横屏浮层、亮度/音量手势、进度与回到直播、画质/同步面板接线、弹幕客户端生命周期与 250ms 批量刷新 |
+| `live_player_page.dart` | 1108 | 直播控制台 | 竖屏信息条 + 画面底部控制条、横屏浮层、亮度/音量手势、进度与回到直播、弹幕设置 / 发送 / 登录提示、弹幕客户端生命周期与 250ms 批量刷新 |
 | `network_video_page.dart` | 295 | 网络视频直链播放 | 直链播放与错误兜底 |
 | `bili_login_page.dart` | 314 | B 站官方网页登录 | WebView 打开 passport、轮询 Cookie、建立会话 |
 | `bili_account_sheet.dart` | 185 | 账号面板 | 资料、刷新、切换账号、退出；`BiliAvatar` |
@@ -237,15 +237,17 @@ lib/
 | 文件 | 行数 | 作用 |
 | --- | --- | --- |
 | `live_console_header.dart` | 204 | 返回 + 双源头像 + 标题/房间号 + 原声/解说 + 状态 |
-| `live_control_overlay.dart` | 198 | 横屏浮层：信息条、暂停/刷新/同步/画质/全屏 |
+| `live_control_overlay.dart` | 218 | 横屏浮层：信息条、暂停/刷新/弹幕开关/弹幕设置/同步/画质/全屏 |
 | `live_portrait_control_bar.dart` | 78 | 竖屏画面底部：暂停、进度条、横屏 |
-| `live_progress_bar.dart` | 176 | 直播进度条、回到直播、直播中标记 |
+| `live_progress_bar.dart` | 224 | 真实区间进度条、定位中 / 回到直播中状态、回到直播按钮 |
 | `live_quality_panel.dart` | 106 | 右侧画质档位面板 |
 | `live_sync_panel.dart` | 233 | 右侧同步面板（延迟校准） |
 | `live_side_panel.dart` | 84 | 右侧滑出面板通用外壳 |
 | `live_icon_button.dart` | 48 | 无边框纯图标按钮 |
 | `live_source_avatars.dart` | 169 | 双源头像（信息条、组合卡复用） |
-| `live_danmaku_panel.dart` | 456 | 实时弹幕列表（倒序贴底、彩色昵称、醒目留言）+ 连接状态 + 输入栏 |
+| `live_danmaku_panel.dart` | 548 | 实时弹幕列表 + 连接状态 + 发送输入栏 |
+| `live_danmaku_overlay.dart` | 367 | 横屏飘屏：等像素速度、分轨道、防追尾、可调区域/字号/透明度/速度 |
+| `live_danmaku_settings_panel.dart` | 220 | 右侧弹幕设置面板：四个滑块 + 恢复默认 |
 
 > 原生侧配套：`android/.../MainActivity.kt` 与 `ios/Runner/AppDelegate.swift` 提供 `lumiplayer/bili_cookie` 通道。
 
@@ -269,9 +271,9 @@ lib/
 
 | 层            | 文件                            | 行数  | 作用                                                    |
 | ------------ | ----------------------------- | --- | ----------------------------------------------------- |
-| domain       | `app_settings.dart`           | 174 | `AppSettings`、`AppThemeMode`、`VideoScaleMode` 等枚举与序列化 |
+| domain       | `app_settings.dart`           | 224 | `AppSettings`、`AppThemeMode`、`VideoScaleMode` 等枚举与序列化 |
 | data         | `settings_repository.dart`    | 33  | 设置读写                                                  |
-| application  | `settings_controller.dart`    | 116 | `SettingsController` + `NavTabController`（底部导航索引）     |
+| application  | `settings_controller.dart`    | 149 | `SettingsController` + `NavTabController`（底部导航索引）     |
 | presentation | `settings_pages.dart`         | 591 | 播放设置、外观设置、存储管理                                        |
 | presentation | `library_settings_pages.dart` | 250 | 隐藏文件夹、扫描设置                                            |
 | presentation | `info_pages.dart`             | 283 | 关于、隐私与权限、帮助与反馈                                        |
@@ -312,7 +314,9 @@ lib/
 | 双路播放、声音切换、同步 | `network/data/dual_live_session.dart` |
 | 直播控制台布局 / 底部控制条 | `network/presentation/live_player_page.dart` + `widgets/live_console_header.dart`、`widgets/live_portrait_control_bar.dart` |
 | 画质 / 同步面板 | `network/presentation/widgets/live_quality_panel.dart`、`live_sync_panel.dart`、`live_side_panel.dart` |
-| 直播进度条 / 回到直播 | `network/presentation/widgets/live_progress_bar.dart` + `network/data/dual_live_session.dart` |
+| 直播进度条 / 回到直播 | `network/presentation/widgets/live_progress_bar.dart` + `network/data/dual_live_session.dart`（`seekable-ranges`） |
+| 横屏飘屏 / 弹幕设置 | `network/presentation/widgets/live_danmaku_overlay.dart`、`live_danmaku_settings_panel.dart` |
+| 发送弹幕 / 登录校验 | `network/data/bili_live_api.dart`（`sendDanmaku`）+ `live_player_page.dart` |
 | 弹幕接收 / 解析 / 重连 | `network/data/danmaku_client.dart` + `network/domain/danmaku_models.dart` |
 | WBI 签名 | `network/data/bili_wbi.dart` |
 | 弹幕列表样式 | `network/presentation/widgets/live_danmaku_panel.dart` |
