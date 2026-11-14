@@ -246,7 +246,9 @@ class _NetworkPageState extends ConsumerState<NetworkPage> {
       backgroundColor: context.appBackground,
       body: SafeArea(
         bottom: false,
-        child: Column(
+        // 整页一个滚动视图：标题、登录、搜索、分段都随内容一起滚走。
+        child: ListView(
+          padding: const EdgeInsets.only(bottom: 28),
           children: <Widget>[
             PageHeader(
               title: '网络',
@@ -277,9 +279,10 @@ class _NetworkPageState extends ConsumerState<NetworkPage> {
               child: _buildSegment(context),
             ),
             const SizedBox(height: 14),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: _isLive
                     ? _buildLiveTab(context, network)
                     : _buildVideoTab(context, network),
@@ -647,9 +650,6 @@ class _NetworkPageState extends ConsumerState<NetworkPage> {
             room: _voice,
             emptyHint: '选择解说声音，可先听原声',
             onTap: () => _pickSource(LiveSourceSlot.voice),
-            onClear: _voice == null
-                ? null
-                : () => setState(() => _voice = null),
           ),
           const SizedBox(height: 14),
           _buildDanmakuPicker(context),
@@ -704,37 +704,6 @@ class _NetworkPageState extends ConsumerState<NetworkPage> {
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 2),
-          Divider(height: 1, color: context.dividerColor),
-          InkWell(
-            onTap: () => showToast(context, '开始观看后，可在播放页调整两路同步'),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 11),
-              child: Row(
-                children: <Widget>[
-                  Icon(
-                    Icons.tune_rounded,
-                    size: 16,
-                    color: context.textSecondary,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '同步调节',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: context.textPrimary,
-                    ),
-                  ),
-                  const Spacer(),
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    size: 18,
-                    color: context.textSecondary,
-                  ),
-                ],
               ),
             ),
           ),
@@ -947,7 +916,6 @@ class _SourceTile extends StatelessWidget {
     required this.room,
     required this.onTap,
     this.emptyHint = '点击选择',
-    this.onClear,
   });
 
   final String label;
@@ -955,7 +923,6 @@ class _SourceTile extends StatelessWidget {
   final LiveRoom? room;
   final String emptyHint;
   final VoidCallback onTap;
-  final VoidCallback? onClear;
 
   @override
   Widget build(BuildContext context) {
@@ -995,21 +962,6 @@ class _SourceTile extends StatelessWidget {
               ),
               const SizedBox(width: 6),
             ],
-            if (onClear != null)
-              GestureDetector(
-                onTap: onClear,
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 5),
-                  child: Text(
-                    '清除',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      color: context.textSecondary,
-                    ),
-                  ),
-                ),
-              ),
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: onTap,
