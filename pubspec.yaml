@@ -2,7 +2,7 @@ name: myplayer
 description: "LumiPlayer - 轻量级跨平台本地视频播放器"
 publish_to: 'none'
 
-version: 1.1.1+7
+version: 1.1.2+8
 
 environment:
   sdk: ^3.13.0-252.0.dev
