@@ -4,7 +4,7 @@
 // 主要内容：
 // - 顶部双源头像（画面源 / 声音源）与房间信息
 // - 画面区、点击呼出控制层、横屏全屏观看
-// - 弹幕区占位与弹幕输入栏（连接能力后续接入）
+// - 实时弹幕（WebSocket 接收）与弹幕输入栏（发送后续接入）
 // - 声音切换、暂停、同步调节、画质切换
 // -------------------------------------------------------------------------
 
@@ -24,7 +24,9 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/ui_kit.dart';
 import '../application/bili_account_controller.dart';
 import '../application/network_controller.dart';
+import '../data/danmaku_client.dart';
 import '../data/dual_live_session.dart';
+import '../domain/danmaku_models.dart';
 import '../domain/live_models.dart';
 import 'widgets/live_control_overlay.dart';
 import 'widgets/live_console_header.dart';
@@ -83,6 +85,17 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
   /// 同步面板是否从右侧展开。
   bool _syncOpen = false;
 
+  // ===== 弹幕 =====
+  DanmakuClient? _danmaku;
+  final List<DanmakuMessage> _danmakuMessages = <DanmakuMessage>[];
+  final List<DanmakuMessage> _danmakuBuffer = <DanmakuMessage>[];
+  DanmakuStatus _danmakuStatus = DanmakuStatus.idle;
+  String? _danmakuError;
+  Timer? _danmakuFlush;
+
+  /// 列表上限：只保留最近 200 条，避免长时间挂机后内存持续增长。
+  static const int _danmakuLimit = 200;
+
   // ===== 亮度 / 音量手势状态（与本地播放器一致） =====
   double _brightness = 1;
   double _volume = 1;
@@ -106,7 +119,10 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
     if (kDebugMode) {
       SchedulerBinding.instance.addTimingsCallback(_onFrameTimings);
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) => _start());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_start());
+      unawaited(_startDanmaku());
+    });
   }
 
   Future<void> _start() async {
@@ -172,6 +188,96 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
         );
       }
     }
+  }
+
+  // ===== 弹幕连接 =====
+  /// 当前弹幕来源对应的房间；选了解说但解说源不可用时回落到画面房间。
+  LiveRoom get _danmakuRoom {
+    if (widget.args.danmaku == DanmakuSource.voice) {
+      return widget.args.voice ?? widget.args.picture;
+    }
+    return widget.args.picture;
+  }
+
+  String get _danmakuRoomName {
+    final LiveRoom room = _danmakuRoom;
+    return room.name.isEmpty ? '房间 ${room.roomId}' : room.name;
+  }
+
+  /// 弹幕独立于播放启动：拿不到 buvid3 或连接失败都不影响画面。
+  Future<void> _startDanmaku() async {
+    if (widget.args.danmaku == DanmakuSource.off) {
+      if (mounted) setState(() => _danmakuStatus = DanmakuStatus.idle);
+      return;
+    }
+
+    final LiveRoom room = _danmakuRoom;
+    final session = ref.read(biliSessionProvider);
+    String buvid = session.buvid3 ?? '';
+    if (buvid.isEmpty) {
+      try {
+        buvid = await session.ensureBuvid();
+      } on Object catch (error) {
+        debugPrint('[LumiPlayer] buvid3 获取失败：$error');
+      }
+    }
+    if (!mounted) return;
+
+    final DanmakuClient client = DanmakuClient(
+      roomId: room.roomId,
+      cookie: session.cookieHeader,
+      buvid: buvid,
+      uid: session.userId,
+      onMessage: _onDanmakuMessage,
+      onStatus: _onDanmakuStatus,
+      onError: _onDanmakuError,
+      onLog: debugPrint,
+    );
+
+    final DanmakuClient? previous = _danmaku;
+    if (previous != null) unawaited(previous.close());
+    setState(() {
+      _danmaku = client;
+      _danmakuMessages.clear();
+      _danmakuStatus = DanmakuStatus.connecting;
+      _danmakuError = null;
+    });
+    client.start();
+  }
+
+  void _onDanmakuMessage(DanmakuMessage message) {
+    if (!mounted) return;
+    // 热门直播间每秒可能有几十条：先入缓冲，250ms 合并刷新一次，
+    // 避免每条弹幕都 setState 重建整个播放页。
+    _danmakuBuffer.add(message);
+    if (_danmakuBuffer.length > _danmakuLimit) {
+      _danmakuBuffer.removeRange(0, _danmakuBuffer.length - _danmakuLimit);
+    }
+    _danmakuFlush ??= Timer(const Duration(milliseconds: 250), _flushDanmaku);
+  }
+
+  void _flushDanmaku() {
+    _danmakuFlush = null;
+    if (!mounted || _danmakuBuffer.isEmpty) return;
+    setState(() {
+      _danmakuMessages.addAll(_danmakuBuffer);
+      _danmakuBuffer.clear();
+      final int extra = _danmakuMessages.length - _danmakuLimit;
+      if (extra > 0) _danmakuMessages.removeRange(0, extra);
+    });
+  }
+
+  void _onDanmakuStatus(DanmakuStatus status) {
+    if (!mounted) return;
+    setState(() {
+      _danmakuStatus = status;
+      if (status == DanmakuStatus.connected) _danmakuError = null;
+    });
+  }
+
+  void _onDanmakuError(String message) {
+    if (!mounted) return;
+    setState(() => _danmakuError = message);
   }
 
   /// 只记录明显掉帧的帧（构建 + 光栅 ≥ 80ms），用于定位横竖屏切换卡顿。
@@ -447,6 +553,7 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
   void dispose() {
     _hideTimer?.cancel();
     _hintTimer?.cancel();
+    _danmakuFlush?.cancel();
     if (kDebugMode) {
       SchedulerBinding.instance.removeTimingsCallback(_onFrameTimings);
     }
@@ -471,6 +578,9 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
       session.currentQn.removeListener(_onQnChanged);
       session.close();
     }
+    final DanmakuClient? danmaku = _danmaku;
+    _danmaku = null;
+    if (danmaku != null) unawaited(danmaku.close());
     super.dispose();
   }
 
@@ -548,7 +658,15 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
           ),
         ),
         _buildVideoStage(context),
-        Expanded(child: LiveDanmakuPanel(source: widget.args.danmaku)),
+        Expanded(
+          child: LiveDanmakuPanel(
+            source: widget.args.danmaku,
+            status: _danmakuStatus,
+            messages: _danmakuMessages,
+            roomName: _danmakuRoomName,
+            error: _danmakuError,
+          ),
+        ),
         LiveDanmakuInputBar(onTap: _showDanmakuComingSoon),
       ],
     );
@@ -788,6 +906,6 @@ class _LivePlayerPageState extends ConsumerState<LivePlayerPage> {
   }
 
   void _showDanmakuComingSoon() {
-    showToast(context, '发弹幕将在接入弹幕连接后开放');
+    showToast(context, '发送弹幕将在下一版开放');
   }
 }
