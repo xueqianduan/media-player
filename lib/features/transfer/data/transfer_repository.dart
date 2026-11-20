@@ -44,13 +44,14 @@ class TransferRepository {
     List<TransferRecord> current,
     TransferRecord record,
   ) {
-    final List<TransferRecord> next = <TransferRecord>[
-      record,
-      ...current.where((TransferRecord item) => item.id != record.id),
-    ]..sort(
-        (TransferRecord a, TransferRecord b) =>
-            b.startedAt.compareTo(a.startedAt),
-      );
+    final List<TransferRecord> next =
+        <TransferRecord>[
+          record,
+          ...current.where((TransferRecord item) => item.id != record.id),
+        ]..sort(
+          (TransferRecord a, TransferRecord b) =>
+              b.startedAt.compareTo(a.startedAt),
+        );
     return next.take(maxRecords).toList();
   }
 }

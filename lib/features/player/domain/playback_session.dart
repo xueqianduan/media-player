@@ -14,6 +14,7 @@ import 'package:flutter/foundation.dart';
 import '../../library/domain/models.dart';
 import 'playback_engine.dart';
 import 'playback_queue.dart';
+import 'playback_tracks.dart';
 
 /// 进度保存回调（由 Application 层落库）。
 typedef ProgressSaver =
@@ -66,6 +67,9 @@ class PlaybackSession {
         error.value = '播放出错：$message';
         status.value = PlaybackStatus.error;
       }),
+      engine.subtitlesStream.listen((PlaybackSubtitles value) {
+        if (!_disposed) subtitles.value = value;
+      }),
     ]);
     _autoSaveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (playing.value) saveProgress();
@@ -92,12 +96,18 @@ class PlaybackSession {
   final ValueNotifier<PlaybackStatus> status = ValueNotifier<PlaybackStatus>(
     PlaybackStatus.idle,
   );
+  final ValueNotifier<PlaybackSubtitles> subtitles =
+      ValueNotifier<PlaybackSubtitles>(const PlaybackSubtitles.loading());
+  final ValueNotifier<bool> subtitleBusy = ValueNotifier<bool>(false);
+  final ValueNotifier<String?> subtitleError = ValueNotifier<String?>(null);
 
   final List<StreamSubscription<dynamic>> _subscriptions =
       <StreamSubscription<dynamic>>[];
   Timer? _autoSaveTimer;
   bool _disposed = false;
   bool _opening = false;
+  bool _changingSubtitle = false;
+  int _mediaRevision = 0;
 
   MediaItem? get currentItem {
     final String? id = currentMediaId.value;
@@ -139,11 +149,14 @@ class PlaybackSession {
     }
 
     _opening = true;
+    _mediaRevision++;
     currentMediaId.value = id;
     completed.value = false;
     error.value = null;
     position.value = Duration.zero;
     duration.value = Duration.zero;
+    subtitles.value = const PlaybackSubtitles.loading();
+    subtitleError.value = null;
     status.value = PlaybackStatus.initializing;
     try {
       debugPrint(
@@ -161,6 +174,7 @@ class PlaybackSession {
           .open(source, startAt: startAt, autoPlay: autoPlay)
           .timeout(const Duration(seconds: 25));
       await engine.setSpeed(speed.value);
+      subtitles.value = engine.subtitles;
       status.value = autoPlay ? PlaybackStatus.playing : PlaybackStatus.paused;
     } on TimeoutException {
       error.value = '加载超时，可能是文件过大或存储读取过慢，请重试';
@@ -229,6 +243,45 @@ class PlaybackSession {
 
   Future<void> setVolume(double value) async {
     await engine.setVolume(value.clamp(0, 1));
+  }
+
+  // ===== 内嵌字幕 =====
+  Future<void> selectSubtitleTrack(String trackId) {
+    return _changeSubtitle(() => engine.selectSubtitleTrack(trackId));
+  }
+
+  Future<void> selectAutomaticSubtitle() {
+    return _changeSubtitle(engine.selectAutomaticSubtitle);
+  }
+
+  Future<void> disableSubtitles() {
+    return _changeSubtitle(engine.disableSubtitles);
+  }
+
+  Future<void> _changeSubtitle(Future<void> Function() change) async {
+    if (_disposed || _opening || _changingSubtitle) return;
+    if (status.value == PlaybackStatus.idle ||
+        status.value == PlaybackStatus.initializing ||
+        status.value == PlaybackStatus.error) {
+      return;
+    }
+    final int revision = _mediaRevision;
+    _changingSubtitle = true;
+    subtitleBusy.value = true;
+    subtitleError.value = null;
+    try {
+      await change();
+      if (_disposed || revision != _mediaRevision) return;
+      subtitles.value = engine.subtitles;
+    } on Object catch (message) {
+      debugPrint('[LumiPlayer] change subtitle failed: $message');
+      if (!_disposed && revision == _mediaRevision) {
+        subtitleError.value = '切换失败，请重试';
+      }
+    } finally {
+      _changingSubtitle = false;
+      if (!_disposed) subtitleBusy.value = false;
+    }
   }
 
   Future<void> next() async {
@@ -313,5 +366,8 @@ class PlaybackSession {
     status.dispose();
     completed.dispose();
     repeatMode.dispose();
+    subtitles.dispose();
+    subtitleBusy.dispose();
+    subtitleError.dispose();
   }
 }

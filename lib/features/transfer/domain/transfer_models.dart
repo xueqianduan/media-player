@@ -131,7 +131,8 @@ class TransferFile {
       path: path,
       name: '${json['name'] ?? '未命名文件'}',
       size: (json['size'] as num?)?.toInt() ?? 0,
-      type: TransferFileTypeX.fromName(json['type'] as String?) ??
+      type:
+          TransferFileTypeX.fromName(json['type'] as String?) ??
           TransferFileType.other,
       source: '${json['source'] ?? ''}',
     );

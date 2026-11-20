@@ -35,7 +35,10 @@ class _FolderEntry {
 }
 
 class SelectFilesPage extends StatefulWidget {
-  const SelectFilesPage({super.key, this.initialFiles = const <TransferFile>[]});
+  const SelectFilesPage({
+    super.key,
+    this.initialFiles = const <TransferFile>[],
+  });
 
   /// 从视频分享入口带进来的预选文件。
   final List<TransferFile> initialFiles;
@@ -68,11 +71,6 @@ class _SelectFilesPageState extends State<SelectFilesPage> {
     }
     _load();
   }
-
-  int get _totalBytes => _selected.values.fold(
-    0,
-    (int sum, TransferFile file) => sum + file.size,
-  );
 
   // ---------------------------------------------------------------- 数据加载
 
@@ -112,9 +110,7 @@ class _SelectFilesPageState extends State<SelectFilesPage> {
         for (final AssetPathEntity path in paths) {
           final int count = await path.assetCountAsync;
           if (count <= 0) continue;
-          folders.add(
-            _FolderEntry(path: path, name: path.name, count: count),
-          );
+          folders.add(_FolderEntry(path: path, name: path.name, count: count));
         }
         if (!mounted) return;
         setState(() {
@@ -223,7 +219,9 @@ class _SelectFilesPageState extends State<SelectFilesPage> {
   /// 全选范围：全部模式为当前类型全部结果，文件夹模式为当前文件夹。
   bool get _allSelected {
     if (_assets.isEmpty) return false;
-    return _assets.every((AssetEntity asset) => _selected.containsKey(asset.id));
+    return _assets.every(
+      (AssetEntity asset) => _selected.containsKey(asset.id),
+    );
   }
 
   Future<void> _toggleSelectAll() async {
@@ -638,7 +636,9 @@ class _SelectFilesPageState extends State<SelectFilesPage> {
       constraints: const BoxConstraints(maxHeight: 220),
       decoration: BoxDecoration(
         color: context.cardColor,
-        border: Border(top: BorderSide(color: context.dividerColor, width: 0.8)),
+        border: Border(
+          top: BorderSide(color: context.dividerColor, width: 0.8),
+        ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -723,7 +723,9 @@ class _SelectFilesPageState extends State<SelectFilesPage> {
     return Container(
       decoration: BoxDecoration(
         color: context.cardColor,
-        border: Border(top: BorderSide(color: context.dividerColor, width: 0.8)),
+        border: Border(
+          top: BorderSide(color: context.dividerColor, width: 0.8),
+        ),
       ),
       child: SafeArea(
         top: false,
@@ -791,47 +793,8 @@ class _SelectFilesPageState extends State<SelectFilesPage> {
   }
 
   void _next(int count) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: context.cardColor,
-      builder: (BuildContext sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                '已选择 $count 个文件',
-                style: TextStyle(
-                  fontSize: 15.5,
-                  fontWeight: FontWeight.w700,
-                  color: context.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                '共 ${formatBytes(_totalBytes)}',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: context.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                '扫码发送将在下一阶段接入：接收方展示二维码，'
-                '发送方扫码后建立局域网连接并开始传输。',
-                style: TextStyle(
-                  fontSize: 12,
-                  height: 1.6,
-                  color: context.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    if (_selected.isEmpty) return;
+    context.push('/transfer/scan', extra: _selected.values.toList());
   }
 }
 
@@ -862,9 +825,7 @@ class _SegmentButton extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
               Icon(
-                selected
-                    ? Icons.list_rounded
-                    : Icons.folder_outlined,
+                selected ? Icons.list_rounded : Icons.folder_outlined,
                 size: 14,
                 color: selected ? AppColors.primary : context.textSecondary,
               ),
@@ -911,10 +872,7 @@ class _AssetThumb extends StatelessWidget {
                 ),
               );
             }
-            return Image.memory(
-              Uint8List.fromList(data),
-              fit: BoxFit.cover,
-            );
+            return Image.memory(Uint8List.fromList(data), fit: BoxFit.cover);
           },
         ),
       ),
@@ -997,10 +955,7 @@ class _StateView extends StatelessWidget {
             ),
             if (actionLabel != null) ...<Widget>[
               const SizedBox(height: 16),
-              OutlinedButton(
-                onPressed: onAction,
-                child: Text(actionLabel!),
-              ),
+              OutlinedButton(onPressed: onAction, child: Text(actionLabel!)),
             ],
           ],
         ),

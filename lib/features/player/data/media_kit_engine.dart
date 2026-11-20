@@ -7,6 +7,7 @@
 // - 截图等扩展能力
 // -------------------------------------------------------------------------
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -16,16 +17,25 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:flutter/widgets.dart';
 
 import '../domain/playback_engine.dart';
+import '../domain/playback_tracks.dart';
 
 /// media_kit 播放引擎实现（data 层适配器）。
 class MediaKitPlaybackEngine implements VideoPlaybackEngine {
   MediaKitPlaybackEngine() {
     _player = Player();
     _controller = VideoController(_player);
+    _trackListSubscription = _player.stream.tracks.listen(_replaceTracks);
   }
 
   late final Player _player;
   late final VideoController _controller;
+  late final StreamSubscription<Tracks> _trackListSubscription;
+  final StreamController<PlaybackSubtitles> _subtitlesController =
+      StreamController<PlaybackSubtitles>.broadcast();
+  List<SubtitleTrackInfo> _subtitleTracks = const <SubtitleTrackInfo>[];
+  SubtitleSelection _subtitleSelection = const SubtitleSelection.auto();
+  PlaybackSubtitles _subtitles = const PlaybackSubtitles.loading();
+  bool _subtitlesLoading = true;
   double _volume = 1;
 
   Player get player => _player;
@@ -37,30 +47,47 @@ class MediaKitPlaybackEngine implements VideoPlaybackEngine {
     Duration startAt = Duration.zero,
     bool autoPlay = true,
   }) async {
+    _subtitlesLoading = true;
+    _subtitleTracks = const <SubtitleTrackInfo>[];
+    _subtitleSelection = const SubtitleSelection.auto();
+    _publishSubtitles();
+
     final Stopwatch watch = Stopwatch()..start();
-    await _player.open(Media(source), play: autoPlay);
-    // open() 返回只代表命令被接受，不代表真的解析出了媒体。
-    // 这里必须等到有效时长，否则界面会停在 00:00 + 转圈。
-    final Duration total = await _waitForDuration();
-    debugPrint(
-      '[LumiPlayer] open ${_shortPath(source)} '
-      'cost=${watch.elapsedMilliseconds}ms '
-      'duration=${total.inMilliseconds}ms '
-      'size=${_player.state.width}x${_player.state.height}',
-    );
-    if (total <= Duration.zero) {
-      throw const PlaybackException('视频解析失败：读不到时长，文件可能损坏或格式不受支持');
-    }
-    if (startAt > Duration.zero) {
-      Duration target = startAt;
-      if (target > total) target = total;
-      try {
-        await _player.seek(target).timeout(const Duration(seconds: 8));
-      } on Object {
-        // 定位失败时继续从头播放，不阻断播放流程。
+    try {
+      await _player.open(Media(source), play: autoPlay);
+      // open() 返回只代表命令被接受，不代表真的解析出了媒体。
+      // 这里必须等到有效时长，否则界面会停在 00:00 + 转圈。
+      final Duration total = await _waitForDuration();
+      debugPrint(
+        '[LumiPlayer] open ${_shortPath(source)} '
+        'cost=${watch.elapsedMilliseconds}ms '
+        'duration=${total.inMilliseconds}ms '
+        'size=${_player.state.width}x${_player.state.height}',
+      );
+      if (total <= Duration.zero) {
+        throw const PlaybackException('视频解析失败：读不到时长，文件可能损坏或格式不受支持');
       }
+      if (startAt > Duration.zero) {
+        Duration target = startAt;
+        if (target > total) target = total;
+        try {
+          await _player.seek(target).timeout(const Duration(seconds: 8));
+        } on Object {
+          // 定位失败时继续从头播放，不阻断播放流程。
+        }
+      }
+      // 同结构文件之间 mpv 可能沿用上一条显式轨道，换片时主动恢复自动。
+      try {
+        await _player.setSubtitleTrack(SubtitleTrack.auto());
+      } on Object catch (error) {
+        debugPrint('[LumiPlayer] reset subtitle track failed: $error');
+      }
+      await _player.setVolume(_volume * 100);
+    } finally {
+      _subtitlesLoading = false;
+      _subtitleSelection = const SubtitleSelection.auto();
+      _replaceTracks(_player.state.tracks);
     }
-    await _player.setVolume(_volume * 100);
   }
 
   /// 轮询等待时长就绪，最多 10 秒（大文件解析可能偏慢）。
@@ -113,12 +140,108 @@ class MediaKitPlaybackEngine implements VideoPlaybackEngine {
 
     try {
       final Uint8List? bytes = await _player.screenshot(format: 'image/jpeg');
-      debugPrint('[LumiPlayer] screenshot fallback ${bytes?.length ?? 0} bytes');
+      debugPrint(
+        '[LumiPlayer] screenshot fallback ${bytes?.length ?? 0} bytes',
+      );
       return bytes;
     } on Object catch (error) {
       debugPrint('[LumiPlayer] screenshot fallback failed: $error');
       return null;
     }
+  }
+
+  void _replaceTracks(Tracks tracks) {
+    final List<SubtitleTrackInfo> visible = <SubtitleTrackInfo>[];
+    for (final SubtitleTrack track in tracks.subtitle) {
+      // auto / no 是库提供的虚拟选项，外挂字幕也不在首版范围内。
+      if (track.id == 'auto' || track.id == 'no' || track.uri || track.data) {
+        continue;
+      }
+      visible.add(
+        SubtitleTrackInfo(
+          id: track.id,
+          title: track.title,
+          language: track.language,
+          codec: track.codec,
+          isDefault: track.isDefault ?? false,
+          isImage: track.image ?? false,
+        ),
+      );
+    }
+    _subtitleTracks = List<SubtitleTrackInfo>.unmodifiable(visible);
+    _publishSubtitles();
+  }
+
+  void _publishSubtitles() {
+    _subtitles = PlaybackSubtitles(
+      tracks: _subtitleTracks,
+      selection: _subtitleSelection,
+      loading: _subtitlesLoading,
+    );
+    if (!_subtitlesController.isClosed) {
+      _subtitlesController.add(_subtitles);
+    }
+  }
+
+  Future<void> _applySubtitleTrack(
+    SubtitleTrack track,
+    SubtitleSelection selection,
+  ) async {
+    try {
+      await _player.setSubtitleTrack(track);
+    } on Object catch (error) {
+      debugPrint('[LumiPlayer] select subtitle failed: $error');
+      throw const PlaybackException('切换字幕失败');
+    }
+    _subtitleSelection = selection;
+    _publishSubtitles();
+  }
+
+  @override
+  Future<void> selectSubtitleTrack(String trackId) async {
+    if (_subtitlesLoading) {
+      throw const PlaybackException('字幕轨道仍在读取');
+    }
+    SubtitleTrackInfo? info;
+    for (final SubtitleTrackInfo track in _subtitleTracks) {
+      if (track.id == trackId) {
+        info = track;
+        break;
+      }
+    }
+    if (info == null) {
+      throw const PlaybackException('字幕轨道已失效');
+    }
+    if (!info.supportsTextRendering) {
+      throw const PlaybackException('图片字幕暂不支持');
+    }
+    SubtitleTrack? target;
+    for (final SubtitleTrack track in _player.state.tracks.subtitle) {
+      if (track.id == trackId && !track.uri && !track.data) {
+        target = track;
+        break;
+      }
+    }
+    if (target == null) {
+      throw const PlaybackException('字幕轨道已失效');
+    }
+    await _applySubtitleTrack(target, SubtitleSelection.track(trackId));
+  }
+
+  @override
+  Future<void> selectAutomaticSubtitle() {
+    return _applySubtitleTrack(
+      SubtitleTrack.auto(),
+      const SubtitleSelection.auto(),
+    );
+  }
+
+  @override
+  Future<void> disableSubtitles() {
+    return _applySubtitleTrack(
+      SubtitleTrack.no(),
+      const SubtitleSelection.off(),
+    );
   }
 
   @override
@@ -141,6 +264,8 @@ class MediaKitPlaybackEngine implements VideoPlaybackEngine {
 
   @override
   Future<void> dispose() async {
+    await _trackListSubscription.cancel();
+    await _subtitlesController.close();
     await _player.dispose();
   }
 
@@ -163,6 +288,12 @@ class MediaKitPlaybackEngine implements VideoPlaybackEngine {
   Stream<String> get errorStream => _player.stream.error;
 
   @override
+  Stream<PlaybackSubtitles> get subtitlesStream => _subtitlesController.stream;
+
+  @override
+  PlaybackSubtitles get subtitles => _subtitles;
+
+  @override
   Duration get position => _player.state.position;
 
   @override
@@ -183,10 +314,25 @@ class VideoSurface extends StatelessWidget {
     super.key,
     required this.engine,
     this.fit = BoxFit.contain,
+    this.subtitlePadding = const EdgeInsets.fromLTRB(20, 0, 20, 24),
   });
 
   final VideoPlaybackEngine engine;
   final BoxFit fit;
+  final EdgeInsets subtitlePadding;
+
+  static const TextStyle _subtitleStyle = TextStyle(
+    height: 1.32,
+    fontSize: 30,
+    letterSpacing: 0,
+    wordSpacing: 0,
+    color: Color(0xFFFFFFFF),
+    fontWeight: FontWeight.w500,
+    backgroundColor: Color(0xB3000000),
+    shadows: <Shadow>[
+      Shadow(color: Color(0xFF000000), blurRadius: 3, offset: Offset(0, 1)),
+    ],
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -196,6 +342,10 @@ class VideoSurface extends StatelessWidget {
         fit: fit,
         controls: NoVideoControls,
         wakelock: false,
+        subtitleViewConfiguration: SubtitleViewConfiguration(
+          style: _subtitleStyle,
+          padding: subtitlePadding,
+        ),
       );
     }
     return const ColoredBox(color: Color(0xFF000000));

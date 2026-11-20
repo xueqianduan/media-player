@@ -30,6 +30,7 @@ import '../data/media_kit_engine.dart';
 import '../domain/playback_engine.dart';
 import '../domain/playback_queue.dart';
 import '../domain/playback_session.dart';
+import '../domain/playback_tracks.dart';
 
 /// 播放器页面：全屏播放 + 手势 + 队列 + 倍速 + 进度记忆。
 class PlayerPage extends ConsumerStatefulWidget {
@@ -774,6 +775,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                     child: switch (_panel) {
                       _PlayerPanel.speed => _buildSpeedPanel(),
                       _PlayerPanel.queue => _buildQueuePanel(),
+                      _PlayerPanel.subtitles => _buildSubtitlePanel(),
                       _PlayerPanel.more => _buildMorePanel(),
                       null => const SizedBox.shrink(),
                     },
@@ -913,6 +915,47 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                 ),
             ],
           ),
+          const SizedBox(height: 22),
+          ValueListenableBuilder<PlaybackSubtitles>(
+            valueListenable: _session.subtitles,
+            builder: (BuildContext context, PlaybackSubtitles state, _) {
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _openPanel(_PlayerPanel.subtitles),
+                child: Row(
+                  children: <Widget>[
+                    const Icon(
+                      Icons.subtitles_rounded,
+                      size: 16,
+                      color: Colors.white54,
+                    ),
+                    const SizedBox(width: 7),
+                    const Text(
+                      '字幕',
+                      style: TextStyle(color: Colors.white70, fontSize: 12.5),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _subtitleSummary(state),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white38,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    ),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      size: 17,
+                      color: Colors.white30,
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
           if (_session.queue.length > 1) ...<Widget>[
             const SizedBox(height: 22),
             GestureDetector(
@@ -948,6 +991,197 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     );
   }
 
+  String _subtitleSummary(PlaybackSubtitles state) {
+    if (state.loading) return '读取中…';
+    if (!state.hasTracks) return '当前视频无字幕';
+    switch (state.selection.mode) {
+      case SubtitleSelectionMode.auto:
+        return '自动';
+      case SubtitleSelectionMode.off:
+        return '已关闭';
+      case SubtitleSelectionMode.track:
+        for (int i = 0; i < state.tracks.length; i++) {
+          if (state.tracks[i].id == state.selection.trackId) {
+            return state.tracks[i].displayTitle(i);
+          }
+        }
+        return '已选择';
+    }
+  }
+
+  String _subtitleTrackDetail(SubtitleTrackInfo track) {
+    final List<String> parts = <String>[];
+    if ((track.title?.trim().isNotEmpty ?? false) &&
+        track.languageLabel != null) {
+      parts.add(track.languageLabel!);
+    }
+    if (!track.supportsTextRendering) {
+      parts.add('图片字幕，暂不支持');
+    } else {
+      final String? codec = _subtitleCodecLabel(track.codec);
+      if (codec != null) parts.add(codec);
+    }
+    if (track.isDefault) parts.add('默认');
+    return parts.join(' · ');
+  }
+
+  String? _subtitleCodecLabel(String? codec) {
+    final String value = codec?.trim().toLowerCase() ?? '';
+    if (value.isEmpty) return null;
+    switch (value) {
+      case 'subrip':
+        return 'SRT';
+      case 'ass':
+        return 'ASS';
+      case 'ssa':
+        return 'SSA';
+      case 'webvtt':
+      case 'vtt':
+        return 'WebVTT';
+      case 'mov_text':
+        return 'MOV_TEXT';
+      case 'hdmv_pgs_subtitle':
+        return 'PGS';
+      case 'dvd_subtitle':
+        return 'VobSub';
+      default:
+        return value.toUpperCase();
+    }
+  }
+
+  Widget _buildSubtitlePanel() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 6, 14, 24),
+      child: ValueListenableBuilder<PlaybackSubtitles>(
+        valueListenable: _session.subtitles,
+        builder: (BuildContext context, PlaybackSubtitles state, _) {
+          return ValueListenableBuilder<bool>(
+            valueListenable: _session.subtitleBusy,
+            builder: (BuildContext context, bool busy, _) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      const Text(
+                        '字幕',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      if (state.hasTracks)
+                        Text(
+                          '${state.tracks.length} 条',
+                          style: const TextStyle(
+                            color: Colors.white38,
+                            fontSize: 11,
+                          ),
+                        ),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: _closePanel,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 32,
+                          height: 32,
+                        ),
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: Colors.white38,
+                          size: 18,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (busy)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(2),
+                        child: const LinearProgressIndicator(
+                          minHeight: 2,
+                          backgroundColor: Colors.white12,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                  if (state.loading)
+                    _buildSubtitleMessage('正在读取字幕…')
+                  else if (!state.hasTracks)
+                    _buildSubtitleMessage('当前视频无可用字幕')
+                  else ...<Widget>[
+                    const SizedBox(height: 2),
+                    _SubtitleOption(
+                      title: '自动',
+                      detail: '跟随文件默认字幕',
+                      selected:
+                          state.selection.mode == SubtitleSelectionMode.auto,
+                      enabled: !busy,
+                      onTap: () =>
+                          unawaited(_session.selectAutomaticSubtitle()),
+                    ),
+                    _SubtitleOption(
+                      title: '关闭',
+                      detail: '不显示字幕',
+                      selected:
+                          state.selection.mode == SubtitleSelectionMode.off,
+                      enabled: !busy,
+                      onTap: () => unawaited(_session.disableSubtitles()),
+                    ),
+                    const Divider(height: 18, color: Colors.white12),
+                    for (int i = 0; i < state.tracks.length; i++)
+                      _SubtitleOption(
+                        title: state.tracks[i].displayTitle(i),
+                        detail: _subtitleTrackDetail(state.tracks[i]),
+                        selected:
+                            state.selection.mode ==
+                                SubtitleSelectionMode.track &&
+                            state.selection.trackId == state.tracks[i].id,
+                        enabled: !busy && state.tracks[i].supportsTextRendering,
+                        onTap: () => unawaited(
+                          _session.selectSubtitleTrack(state.tracks[i].id),
+                        ),
+                      ),
+                  ],
+                  ValueListenableBuilder<String?>(
+                    valueListenable: _session.subtitleError,
+                    builder: (BuildContext context, String? message, _) {
+                      if (message == null) return const SizedBox.shrink();
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Text(
+                          message,
+                          style: const TextStyle(
+                            color: Color(0xFFFF9B9B),
+                            fontSize: 11.5,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSubtitleMessage(String message) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 2),
+      child: Text(
+        message,
+        style: const TextStyle(color: Colors.white38, fontSize: 12.5),
+      ),
+    );
+  }
+
   BoxFit _fitFor(VideoScaleMode mode) {
     switch (mode) {
       case VideoScaleMode.original:
@@ -959,6 +1193,23 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       case VideoScaleMode.stretch:
         return BoxFit.fill;
     }
+  }
+
+  /// 字幕跟随控制栏避让，避免被进度条、按钮或竖屏队列预览压住。
+  EdgeInsets _subtitlePadding(BuildContext context) {
+    final double safeBottom = MediaQuery.paddingOf(context).bottom;
+    if (!_controlsVisible || _locked) {
+      return EdgeInsets.fromLTRB(20, 0, 20, 20 + safeBottom);
+    }
+    final double controlsHeight;
+    if (_landscape) {
+      controlsHeight = 76;
+    } else if (_session.queue.length > 1) {
+      controlsHeight = 216;
+    } else {
+      controlsHeight = 128;
+    }
+    return EdgeInsets.fromLTRB(20, 0, 20, controlsHeight + safeBottom);
   }
 
   void _showSpeedSheet() => _openPanel(_PlayerPanel.speed);
@@ -1120,6 +1371,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                         child: VideoSurface(
                           engine: _session.engine,
                           fit: _fitFor(scaleMode),
+                          subtitlePadding: _subtitlePadding(context),
                         ),
                       ),
                     ),
@@ -1986,6 +2238,15 @@ class _FailedEngine implements VideoPlaybackEngine {
   Future<void> setVolume(double volume) async {}
 
   @override
+  Future<void> selectSubtitleTrack(String trackId) async {}
+
+  @override
+  Future<void> selectAutomaticSubtitle() async {}
+
+  @override
+  Future<void> disableSubtitles() async {}
+
+  @override
   Future<void> dispose() async => _empty.close();
 
   @override
@@ -2007,6 +2268,13 @@ class _FailedEngine implements VideoPlaybackEngine {
   Stream<String> get errorStream => const Stream<String>.empty();
 
   @override
+  Stream<PlaybackSubtitles> get subtitlesStream =>
+      const Stream<PlaybackSubtitles>.empty();
+
+  @override
+  PlaybackSubtitles get subtitles => const PlaybackSubtitles.loading();
+
+  @override
   Duration get position => Duration.zero;
 
   @override
@@ -2017,6 +2285,94 @@ class _FailedEngine implements VideoPlaybackEngine {
 
   @override
   double get speed => 1;
+}
+
+/// 字幕面板中的一行：标题、说明和选中勾。
+class _SubtitleOption extends StatelessWidget {
+  const _SubtitleOption({
+    required this.title,
+    required this.detail,
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String title;
+  final String detail;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      enabled: enabled,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: enabled ? onTap : null,
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 2),
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+          decoration: BoxDecoration(
+            color: selected
+                ? AppColors.primary.withValues(alpha: 0.10)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(7),
+          ),
+          child: Opacity(
+            opacity: enabled ? 1 : 0.42,
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: selected ? AppColors.primary : Colors.white,
+                          fontSize: 13,
+                          fontWeight: selected
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                        ),
+                      ),
+                      if (detail.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: 3),
+                        Text(
+                          detail,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white38,
+                            fontSize: 10.5,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (selected)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 8),
+                    child: Icon(
+                      Icons.check_rounded,
+                      size: 18,
+                      color: AppColors.primary,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// 右侧设置面板的小节：灰色标题 + 横向排列的选项。
@@ -2076,4 +2432,4 @@ class _SettingsOption extends StatelessWidget {
 }
 
 /// 播放器内嵌面板类型。
-enum _PlayerPanel { speed, more, queue }
+enum _PlayerPanel { speed, more, queue, subtitles }

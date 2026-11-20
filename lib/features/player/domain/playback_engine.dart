@@ -1,3 +1,5 @@
+import 'playback_tracks.dart';
+
 /// 播放器状态机（与具体播放引擎解耦）。
 enum PlaybackStatus {
   idle,
@@ -30,6 +32,15 @@ abstract interface class VideoPlaybackEngine {
 
   Future<void> setVolume(double volume);
 
+  /// 切换到当前文件中的指定内嵌字幕轨。
+  Future<void> selectSubtitleTrack(String trackId);
+
+  /// 恢复文件的自动选轨策略。
+  Future<void> selectAutomaticSubtitle();
+
+  /// 关闭字幕显示，不卸载文件里的字幕轨。
+  Future<void> disableSubtitles();
+
   Future<void> dispose();
 
   Stream<Duration> get positionStream;
@@ -43,6 +54,11 @@ abstract interface class VideoPlaybackEngine {
   Stream<bool> get completedStream;
 
   Stream<String> get errorStream;
+
+  /// 当前视频的字幕轨道与选择状态。
+  Stream<PlaybackSubtitles> get subtitlesStream;
+
+  PlaybackSubtitles get subtitles;
 
   Duration get position;
 

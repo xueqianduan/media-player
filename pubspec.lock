@@ -516,6 +516,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "1.19.0"
+  mobile_scanner:
+    dependency: "direct main"
+    description:
+      name: mobile_scanner
+      sha256: "175c62fc813c2bd762757359a2088f8cbdb72020cf85d4cd27fc4d3fe59be058"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "7.5.0"
   objective_c:
     dependency: transitive
     description:
@@ -644,6 +652,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "6.5.4"
+  pretty_qr_code:
+    dependency: "direct main"
+    description:
+      name: pretty_qr_code
+      sha256: "474f8a4512113fba06f14a6ec9bbf42353b4e651d7a520e3096f2a9b6bbe7a8a"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "3.6.0"
   process:
     dependency: transitive
     description:
@@ -660,6 +676,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "2.2.1"
+  qr:
+    dependency: transitive
+    description:
+      name: qr
+      sha256: "2c0189dca64a3ab08dda7acd7911c89af2374f08eb4eaded3e8ef4609f3b9c8b"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "3.0.3"
   record_use:
     dependency: transitive
     description:

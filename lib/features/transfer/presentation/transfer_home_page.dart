@@ -87,12 +87,90 @@ class TransferHomePage extends ConsumerWidget {
               const _EmptyRecent()
             else
               for (final TransferRecord record in records.take(3)) ...<Widget>[
-                _RecordTile(record: record),
+                _RecordTile(
+                  record: record,
+                  onTap: () => _showRecordDetail(context, record),
+                ),
                 const SizedBox(height: 10),
               ],
           ],
         ),
       ),
+    );
+  }
+
+  void _showRecordDetail(BuildContext context, TransferRecord record) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext sheetContext) {
+        return Container(
+          margin: const EdgeInsets.all(12),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+          decoration: BoxDecoration(
+            color: context.cardColor,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                record.direction == TransferDirection.send ? '发送记录' : '接收记录',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: context.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '设备：${record.deviceName.isEmpty ? '对方设备' : record.deviceName}\n'
+                '状态：${record.status.label}\n'
+                '大小：${formatBytes(record.totalBytes)}',
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.7,
+                  color: context.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 10),
+              for (final TransferFile file in record.files.take(6))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    children: <Widget>[
+                      Icon(
+                        Icons.insert_drive_file_outlined,
+                        size: 14,
+                        color: context.textSecondary,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          file.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: context.textPrimary,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        formatBytes(file.size),
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          color: context.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -152,9 +230,7 @@ class _ActionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color background = filled
-        ? AppColors.primary
-        : context.cardColor;
+    final Color background = filled ? AppColors.primary : context.cardColor;
     final Color foreground = filled ? Colors.white : AppColors.primary;
 
     return GestureDetector(
@@ -210,9 +286,10 @@ class _ActionCard extends StatelessWidget {
 }
 
 class _RecordTile extends StatelessWidget {
-  const _RecordTile({required this.record});
+  const _RecordTile({required this.record, this.onTap});
 
   final TransferRecord record;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -220,12 +297,16 @@ class _RecordTile extends StatelessWidget {
     final bool failed = record.status == TransferStatus.failed;
     final bool cancelled = record.status == TransferStatus.cancelled;
 
+    final TransferFileType type = record.files.isEmpty
+        ? TransferFileType.other
+        : record.files.first.type;
     return AppCard(
       padding: const EdgeInsets.all(12),
+      onTap: onTap,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          _TypeBadge(type: record.files.first.type),
+          _TypeBadge(type: type),
           const SizedBox(width: 11),
           Expanded(
             child: Column(
@@ -246,10 +327,7 @@ class _RecordTile extends StatelessWidget {
                   '${record.direction.label}至 ${record.deviceName.isEmpty ? '对方设备' : record.deviceName}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: context.textSecondary,
-                  ),
+                  style: TextStyle(fontSize: 11, color: context.textSecondary),
                 ),
                 const SizedBox(height: 7),
                 if (running) ...<Widget>[

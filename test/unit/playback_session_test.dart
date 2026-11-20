@@ -5,6 +5,7 @@ import 'package:myplayer/features/library/domain/models.dart';
 import 'package:myplayer/features/player/domain/playback_engine.dart';
 import 'package:myplayer/features/player/domain/playback_queue.dart';
 import 'package:myplayer/features/player/domain/playback_session.dart';
+import 'package:myplayer/features/player/domain/playback_tracks.dart';
 
 void main() {
   late _FakeEngine engine;
@@ -225,6 +226,15 @@ class _FakeEngine implements VideoPlaybackEngine {
   Future<void> setVolume(double volume) async {}
 
   @override
+  Future<void> selectSubtitleTrack(String trackId) async {}
+
+  @override
+  Future<void> selectAutomaticSubtitle() async {}
+
+  @override
+  Future<void> disableSubtitles() async {}
+
+  @override
   Future<void> dispose() async {
     await _position.close();
     await _duration.close();
@@ -251,6 +261,13 @@ class _FakeEngine implements VideoPlaybackEngine {
 
   @override
   Stream<String> get errorStream => _error.stream;
+
+  @override
+  Stream<PlaybackSubtitles> get subtitlesStream =>
+      const Stream<PlaybackSubtitles>.empty();
+
+  @override
+  PlaybackSubtitles get subtitles => const PlaybackSubtitles.loading();
 
   @override
   Duration get position => _positionValue;

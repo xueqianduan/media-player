@@ -1,6 +1,10 @@
 package com.example.myplayer
 
+import android.app.Activity
+import android.content.Intent
+import android.net.Uri
 import android.webkit.CookieManager
+import com.example.myplayer.transfer.TransferBridge
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -8,11 +12,12 @@ import io.flutter.plugin.common.MethodChannel
 /**
  * 宿主 Activity。
  *
- * 只做一件事：给 Dart 侧提供读取 / 清理 WebView Cookie 的通道，
- * 供内嵌 B 站官方登录页在登录完成后取回 SESSDATA 等凭证。
- * （SESSDATA 是 HttpOnly，JavaScript 读不到，只能走原生 CookieManager。）
+ * 1. B 站登录 Cookie 通道（SESSDATA 是 HttpOnly，只能走 CookieManager）。
+ * 2. 文件传输桥：TLS 接收/发送、系统选择器与目录授权。
  */
 class MainActivity : FlutterActivity() {
+
+    private lateinit var transferBridge: TransferBridge
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -54,5 +59,65 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        transferBridge = TransferBridge(
+            this,
+            flutterEngine.dartExecutor.binaryMessenger,
+            ::launchDocuments,
+            ::launchDirectory,
+        )
+        transferBridge.register()
+    }
+
+    private fun launchDocuments() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        startActivityForResult(intent, REQ_DOCUMENTS)
+    }
+
+    private fun launchDirectory() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        startActivityForResult(intent, REQ_DIRECTORY)
+    }
+
+    @Deprecated("FlutterActivity 只暴露 startActivityForResult")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (!::transferBridge.isInitialized) return
+        when (requestCode) {
+            REQ_DOCUMENTS -> {
+                if (resultCode != Activity.RESULT_OK) {
+                    transferBridge.onDocumentsPicked(emptyList())
+                    return
+                }
+                val uris = ArrayList<Uri>()
+                data?.clipData?.let { clip ->
+                    for (index in 0 until clip.itemCount) {
+                        uris.add(clip.getItemAt(index).uri)
+                    }
+                }
+                data?.data?.let { uris.add(it) }
+                transferBridge.onDocumentsPicked(uris)
+            }
+            REQ_DIRECTORY -> {
+                transferBridge.onDirectoryPicked(
+                    if (resultCode == Activity.RESULT_OK) data?.data else null,
+                )
+            }
+        }
+    }
+
+    companion object {
+        private const val REQ_DOCUMENTS = 4101
+        private const val REQ_DIRECTORY = 4102
     }
 }
