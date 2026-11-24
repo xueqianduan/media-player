@@ -111,6 +111,17 @@ class TransferFile {
 
   bool get isAvailable => path.isNotEmpty;
 
+  TransferFile copyWith({String? path, String? name, int? size}) {
+    return TransferFile(
+      id: id,
+      path: path ?? this.path,
+      name: name ?? this.name,
+      size: size ?? this.size,
+      type: type,
+      source: source,
+    );
+  }
+
   Map<String, dynamic> toJson() => <String, dynamic>{
     'id': id,
     'path': path,
@@ -137,6 +148,17 @@ class TransferFile {
       source: '${json['source'] ?? ''}',
     );
   }
+}
+
+/// 一次发送流程的入口参数。
+///
+/// [fromPlayer] 表示由播放控制台发起：完成后要沿路由栈回到播放器，
+/// 而不是回到传输首页。
+class TransferSendRequest {
+  const TransferSendRequest({required this.files, this.fromPlayer = false});
+
+  final List<TransferFile> files;
+  final bool fromPlayer;
 }
 
 /// 一次传输任务。

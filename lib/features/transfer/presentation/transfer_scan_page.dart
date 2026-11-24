@@ -15,9 +15,9 @@ import '../domain/transfer_models.dart';
 import '../domain/transfer_session.dart';
 
 class TransferScanPage extends ConsumerStatefulWidget {
-  const TransferScanPage({super.key, required this.files});
+  const TransferScanPage({super.key, required this.request});
 
-  final List<TransferFile> files;
+  final TransferSendRequest request;
 
   @override
   ConsumerState<TransferScanPage> createState() => _TransferScanPageState();
@@ -55,7 +55,7 @@ class _TransferScanPageState extends ConsumerState<TransferScanPage> {
     await _controller.stop();
     final String? taskId = await ref
         .read(transferSessionProvider.notifier)
-        .startSend(invite: text, files: widget.files);
+        .startSend(invite: text, files: widget.request.files);
     if (!mounted) return;
     if (taskId == null) {
       final TransferSessionState session = ref.read(transferSessionProvider);
@@ -67,7 +67,26 @@ class _TransferScanPageState extends ConsumerState<TransferScanPage> {
       await _controller.start();
       return;
     }
-    context.push('/transfer/task');
+    final bool? backToPlayer = await context.push<bool>(
+      '/transfer/task',
+      extra: widget.request.fromPlayer,
+    );
+    if (!mounted) return;
+    if (backToPlayer == true) {
+      context.pop(true);
+      return;
+    }
+    // 从任务页返回（失败、取消或主动退出）：恢复相机，允许重新扫码。
+    setState(() {
+      _handled = false;
+      _sending = false;
+      _error = null;
+    });
+    try {
+      await _controller.start();
+    } on Object {
+      // 相机不可用时仍保留手动粘贴入口。
+    }
   }
 
   @override
@@ -163,7 +182,7 @@ class _TransferScanPageState extends ConsumerState<TransferScanPage> {
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
                     Text(
-                      '共 ${widget.files.length} 个文件，连接后自动开始发送',
+                      '共 ${widget.request.files.length} 个文件，连接后自动开始发送',
                       style: const TextStyle(
                         color: Colors.white54,
                         fontSize: 11,

@@ -26,6 +26,7 @@ import '../../library/domain/models.dart';
 import '../../library/presentation/video_actions.dart';
 import '../../settings/application/settings_controller.dart';
 import '../../settings/domain/app_settings.dart';
+import '../../transfer/presentation/transfer_entry.dart';
 import '../data/media_kit_engine.dart';
 import '../domain/playback_engine.dart';
 import '../domain/playback_queue.dart';
@@ -76,6 +77,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   bool _locked = false;
   bool _lockIconVisible = false;
   Timer? _lockIconTimer;
+  bool _sharing = false;
 
   @override
   // ===== 生命周期与初始化 =====
@@ -699,8 +701,39 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     if (mounted) setState(() {});
   }
 
-  void _showSharePlaceholder() {
-    _showHint('分享功能后续开放');
+  /// 分享当前正在播放的这一集：暂停后进入确认页，返回时恢复原播放状态。
+  Future<void> _shareCurrent() async {
+    if (_sharing) return;
+    if (_panel != null) setState(() => _panel = null);
+    final MediaItem? item = _session.currentItem;
+    final PlaybackStatus status = _session.status.value;
+    if (item == null ||
+        status == PlaybackStatus.idle ||
+        status == PlaybackStatus.initializing ||
+        status == PlaybackStatus.error) {
+      _showHint('视频还在准备中，请稍后再试');
+      return;
+    }
+    final bool wasPlaying = _session.playing.value;
+    _sharing = true;
+    _hideTimer?.cancel();
+    try {
+      if (wasPlaying) {
+        await _session.togglePlay();
+        if (!mounted) return;
+      }
+      await openTransferShare(context, <MediaItem>[item], fromPlayer: true);
+    } finally {
+      _sharing = false;
+    }
+    if (!mounted) return;
+    // 返回播放器：原来在播就继续，原来暂停就保持暂停。
+    if (wasPlaying && !_session.playing.value) {
+      await _session.togglePlay();
+    }
+    if (!mounted) return;
+    setState(() => _controlsVisible = true);
+    _scheduleHide();
   }
 
   // ===== 侧边面板：倍速 / 更多 / 队列 =====
@@ -1897,8 +1930,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
             ),
           ),
           IconButton(
-            tooltip: '分享（占位）',
-            onPressed: _showSharePlaceholder,
+            tooltip: '分享视频',
+            onPressed: _shareCurrent,
             icon: const Icon(
               Icons.share_rounded,
               color: Colors.white,

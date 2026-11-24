@@ -1,8 +1,8 @@
 # LumiPlayer 下一版实施方案
 
-日期 2026-11-24 · Android · 代码基线 `f92da23`（当前版本 `1.2.0+9`）
+日期 2026-11-24 · Android · 代码基线 `9268c7d`（当前版本 `1.2.2+11`）
 
-当前状态为**步骤 1 已实施、等待真机验收**。计划顺序是本地视频多音轨切换、发送桥接修复、播放器分享、发送失败重试。每次开始改代码前，先说明本次范围并询问用户，得到明确同意后实施。对外发布准备暂缓。 [项目代码实施确认](../AGENTS.md) · [本地字幕与音轨方案](local-playback-tracks-implementation-plan.md) · [文件传输方案](file-transfer-implementation-plan.md)
+当前状态为**步骤 1、2 已实施，等待真机验收**；步骤 3「发送失败重试」待开始。计划顺序是本地视频多音轨切换、发送桥接修复、播放器分享、发送失败重试。每次开始改代码前，先说明本次范围并询问用户，得到明确同意后实施。对外发布准备暂缓。 [项目代码实施确认](../AGENTS.md) · [本地字幕与音轨方案](local-playback-tracks-implementation-plan.md) · [文件传输方案](file-transfer-implementation-plan.md)
 
 ## 1. 现状与优先级
 
@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | P0 传输修复 | 统一 Kotlin 与 Flutter 的发送返回值 | Kotlin 启动线程后用 `result.success(taskId)` 返回字符串，Flutter 的 `_invoke()` 按 Map 读取。跨通道类型不一致会让 Flutter 在原生已开始任务后报错。先修这条公共路径，再接分享和重试。 [Android 发送桥](../android/app/src/main/kotlin/com/example/myplayer/transfer/TransferBridge.kt) · [Flutter 发送桥](../lib/features/transfer/data/transfer_bridge.dart) |
 | P0 已完成（待验收） | 内嵌音轨切换 | 已增加音轨领域模型、引擎与会话接口，并将侧栏扩展为「字幕与音轨」。多音轨支持自动与指定轨，单音轨只读展示；双音轨 MKV 的真实听感仍待真机确认。 [播放器接口](../lib/features/player/domain/playback_engine.dart) |
-| P0 补齐 | 播放器分享、发送失败重试 | 视频列表已复用 `openTransferShare`，播放器分享仍是占位。扫码页处理同步失败，任务开始后的失败页只有退出操作，接收结果确认也尚未和重试清单关联。 [播放器](../lib/features/player/presentation/player_page.dart) · [分享入口](../lib/features/transfer/presentation/transfer_entry.dart) · [传输详情](../lib/features/transfer/presentation/transfer_task_page.dart) |
+| P0 已完成（待验收） | 播放器分享 | 播放控制台右上角已接入完整分享流程：取当前集、暂停、确认页展示名称与真实大小、下一步才扫码，完成后返回原视频与播放状态。发送失败重试仍未实现。 [播放器](../lib/features/player/presentation/player_page.dart) · [分享入口](../lib/features/transfer/presentation/transfer_entry.dart) · [传输详情](../lib/features/transfer/presentation/transfer_task_page.dart) |
 | 暂缓 | 设备身份、正式签名与发布验收 | TLS 身份随 APK 共用，Android `release` 配置引用调试签名。真机验收表仍待填写，导航测试还有旧的「磁力」用例。公开发布时再安排。 [TLS 实现](../android/app/src/main/kotlin/com/example/myplayer/transfer/TransferSsl.kt) · [签名配置](../android/app/build.gradle.kts) · [真机验收表](transfer-device-test.md) · [导航测试](../test/widget/navigation_test.dart) |
 
 音轨可以先独立开发和验证。分享与传输重试共用发送通道，按「修桥接 → 分享 → 重试」落地。已有字幕自动、关闭和手动选项一起做回归。
@@ -34,13 +34,31 @@
 
 **通过条件**　离线打开双音轨 MKV，能听出原声和配音的切换。播放和暂停状态各测一次，切换期间位置不回到开头。字幕开关及语言保持当前选择。连续换片时旧轨道和迟到结果不会影响下一集。配一个单音轨样片验证界面。沿用原字幕方案的 TR01、TR03–TR07，并补音轨会话测试。 [字幕与音轨验收](local-playback-tracks-implementation-plan.md#5-验收清单)
 
-## 3. 补齐播放器分享
+## 3. 播放控制台右上角分享
 
-1. 用 `_session.currentItem` 取得用户点击时实际播放的 `MediaItem`，在播放器分享按钮调用现有 `openTransferShare`。从播放列表跳到下一集后，分享要带入下一集。继续使用 `/transfer/select`，让用户确认或添加文件，再扫码发送。返回播放器时保持原视频和进度。 [播放器](../lib/features/player/presentation/player_page.dart) · [分享入口](../lib/features/transfer/presentation/transfer_entry.dart)
-2. 修正预选文件身份。相册视频使用 `MediaItem.sourceId` 对应 `AssetEntity.id`，相册浏览和分享入口使用同一去重规则。导入视频使用应用已有可读路径。`sourceLocator` 可以是资产标识，要先解析为可读媒体 URI 或文件路径。沿用已有来源解析能力，保持旧记录的读取兼容。 [媒体模型](../lib/features/library/domain/models.dart) · [媒体解析](../lib/features/library/data/media_resolver.dart) · [文件选择页](../lib/features/transfer/presentation/select_files_page.dart)
-3. 扫码前验证预选文件可读、权限有效、大小已知，发送打开流时再次检查。失败提示具体文件并保留编辑清单。Android 相册优先读取授权 URI，导入视频直接流式读原文件。扫码和任务只传已经验证的快照。
+该按钮用于把正在播放的本地视频发送到另一台运行 LumiPlayer 的手机。发送内容是原始视频文件，文件内的音轨和字幕随文件一起保留。
 
-**通过条件**　从相册扫描视频和应用内导入视频的播放页各发一份。正确带入当前视频，同一相册视频从列表再次勾选时只保留一份。权限撤回或源文件删除有明确提示，返回播放器能继续观看。
+**实施状态**　已完成（v1.2.2+11），等待真机按下方验收条件验证。
+
+### 已确认的用户流程
+
+1. **点击右上角「分享」。** 取点击时正在播放的这一集，记下播放位置和播放或暂停状态。离开控制台时暂停当前视频。视频正在切换或当前文件无法确定时，提示用户等视频就绪。
+2. **先显示当前视频和文件大小。** 复用现有文件选择页，直接展开已选清单，默认只选中正在播放的这一集。清单首屏展示视频名称、文件大小和「下一步」。大小尚未读取时显示「正在读取大小」，读到真实大小后才可继续。用户在这个页面确认发送内容，点「下一步」即完成确认。
+3. **确认后打开扫码。** 检查文件存在、授权有效且可读，通过后进入扫码页。对方在 LumiPlayer 点「接收文件」并亮码。扫码成功、连接及清单校验通过后，自动进入传输详情并开始发送。二维码无效或连接失败时，显示原因并保留已选视频。
+4. **查看传输结果。** 详情展示当前文件、已传字节、总大小和结果。接收端保存并校验成功、发送端收到确认后显示完成。发送失败时保留清单，允许按第 4 节重新扫码。传输中返回时先确认是否取消，选择继续传输则留在详情页。
+5. **回到原播放控制台。** 在确认页直接返回时回到播放器，从扫码页返回时先回到已选清单。完成后点「返回播放器」，或确认取消后退出分享流程，均回到发起时的视频和时间点。原来正在播放则继续，原来暂停则保持暂停。
+
+### 实现要点
+
+- 用 `_session.currentItem` 取得当前 `MediaItem`，通过现有 `openTransferShare` 进入 `/transfer/select`，由播放器入口请求首屏展开已选清单。从队列切换后，等当前视频就绪再允许分享。传输结束后沿来源路由返回，保留原播放会话。 [播放器](../lib/features/player/presentation/player_page.dart) · [分享入口](../lib/features/transfer/presentation/transfer_entry.dart) · [传输详情](../lib/features/transfer/presentation/transfer_task_page.dart)
+- 相册视频使用 `MediaItem.sourceId` 对应 `AssetEntity.id`，相册浏览和分享预选使用同一去重规则。Android 相册优先读取授权 URI，导入视频使用可读路径。保留现有记录的读取兼容。 [媒体模型](../lib/features/library/domain/models.dart) · [媒体解析](../lib/features/library/data/media_resolver.dart) · [文件选择页](../lib/features/transfer/presentation/select_files_page.dart)
+- 在「下一步」校验文件并冻结本次发送清单，打开输入流时再复核。权限撤回、源文件删除或大小读取失败时，提示具体文件和原因，保留已选清单供用户处理。 [发送会话](../lib/features/transfer/application/transfer_session_controller.dart)
+
+### 验收条件
+
+- 从相册扫描的视频和应用内导入的视频各点一次右上角「分享」。首屏显示正确的视频名称与文件大小，点「下一步」后才出现扫码界面。跳到下一集后重复检查，预选应是新的一集。
+- 取消扫码后，确认页仍保留同一视频。授权撤回或源文件删除时，显示明确原因。成功接收的测试 MKV 仍可切换其原有音轨和字幕。
+- 分别从正在播放和暂停的视频发起分享，验证返回时的视频、时间点与播放状态。验证传输完成返回、失败重扫及取消传输三条路径。
 
 ## 4. 补齐发送失败重试
 
@@ -68,7 +86,7 @@
 | 步骤 | 交付物 | 验收条件 |
 | --- | --- | --- |
 | 1. 多音轨切换 | 「字幕与音轨」面板、引擎与会话实现、双音轨样片记录 | 离线听得出语言变化，保持进度和字幕，换片恢复自动。 |
-| 2. 发送通道与播放器分享 | 统一的通道响应、真实分享入口、媒体身份去重与来源验证 | 分享当前视频后可以扫码发送，原生与界面使用同一任务号，权限失效有提示。 |
+| 2. 发送通道与播放器分享 | 统一的通道响应、当前视频确认页、扫码发送与返回播放 | 先显示当前视频和文件大小，点「下一步」才扫码。原生与界面使用同一任务号，权限失效有提示，退出分享后回到原播放位置。 |
 | 3. 传输失败重试 | 发送侧重新扫码、接收侧重新接收、逐文件结果与重试测试 | 重新连接的新任务只重发待确认文件，旧记录和已保存文件可查，晚到事件不会改写当前任务。 |
 | 4. 发布候选（暂缓） | 设备独立身份、签名 APK、自动化结果与双机测试记录 | `flutter analyze`、`flutter test --exclude-tags preview` 和 `flutter build apk --release --split-per-abi` 通过。双机用例通过并完成安装及升级验证。 |
 

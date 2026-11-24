@@ -17,7 +17,10 @@ import '../domain/transfer_models.dart';
 import '../domain/transfer_session.dart';
 
 class TransferTaskPage extends ConsumerWidget {
-  const TransferTaskPage({super.key});
+  const TransferTaskPage({super.key, this.fromPlayer = false});
+
+  /// 由播放控制台发起：结束后逐级返回播放器，而不是回到首页。
+  final bool fromPlayer;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -172,14 +175,27 @@ class TransferTaskPage extends ConsumerWidget {
               icon: const Icon(Icons.close_rounded, size: 17),
               label: const Text('取消传输'),
             )
-          else
+          else ...<Widget>[
             FilledButton(
               onPressed: () {
                 ref.read(transferSessionProvider.notifier).reset();
-                context.go('/');
+                if (fromPlayer) {
+                  context.pop(true);
+                } else {
+                  context.go('/');
+                }
               },
-              child: const Text('完成'),
+              child: Text(fromPlayer ? '返回播放器' : '完成'),
             ),
+            if (fromPlayer &&
+                session.phase == TransferPhase.failed) ...<Widget>[
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: () => context.pop(),
+                child: const Text('重新扫码'),
+              ),
+            ],
+          ],
         ],
       ),
     );
@@ -193,7 +209,7 @@ class TransferTaskPage extends ConsumerWidget {
     }
   }
 
-  Future<void> _cancel(BuildContext context, WidgetRef ref) async {
+  Future<bool> _cancel(BuildContext context, WidgetRef ref) async {
     final bool? ok = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
@@ -211,16 +227,29 @@ class TransferTaskPage extends ConsumerWidget {
         ],
       ),
     );
-    if (ok == true) {
-      await ref.read(transferSessionProvider.notifier).cancel();
-    }
+    if (ok != true) return false;
+    await ref.read(transferSessionProvider.notifier).cancel();
+    return true;
   }
 
   Future<void> _leave(BuildContext context, WidgetRef ref, bool busy) async {
-    if (busy) {
-      await _cancel(context, ref);
-      if (!context.mounted) return;
+    if (!busy) {
+      if (fromPlayer) {
+        ref.read(transferSessionProvider.notifier).reset();
+        context.pop(true);
+      } else {
+        context.pop();
+      }
+      return;
     }
-    context.pop();
+    final bool cancelled = await _cancel(context, ref);
+    if (!context.mounted || !cancelled) return;
+    ref.read(transferSessionProvider.notifier).reset();
+    if (fromPlayer) {
+      // 确认取消后直接回到播放器，恢复原来的视频与时间点。
+      context.pop(true);
+    } else {
+      context.pop();
+    }
   }
 }

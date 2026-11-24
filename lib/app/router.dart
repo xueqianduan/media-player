@@ -45,10 +45,13 @@ GoRouter buildRouter({String initialLocation = '/'}) {
       GoRoute(path: '/', builder: (_, _) => const HomeShell()),
       GoRoute(
         path: '/transfer/select',
-        builder: (BuildContext context, GoRouterState state) => SelectFilesPage(
-          initialFiles:
-              (state.extra as List<TransferFile>?) ?? const <TransferFile>[],
-        ),
+        builder: (BuildContext context, GoRouterState state) {
+          final TransferSendRequest request = _sendRequestFrom(state.extra);
+          return SelectFilesPage(
+            initialFiles: request.files,
+            fromPlayer: request.fromPlayer,
+          );
+        },
       ),
       GoRoute(
         path: '/transfer/receive',
@@ -57,15 +60,12 @@ GoRouter buildRouter({String initialLocation = '/'}) {
       GoRoute(
         path: '/transfer/scan',
         builder: (BuildContext context, GoRouterState state) =>
-            TransferScanPage(
-              files:
-                  (state.extra as List<TransferFile>?) ??
-                  const <TransferFile>[],
-            ),
+            TransferScanPage(request: _sendRequestFrom(state.extra)),
       ),
       GoRoute(
         path: '/transfer/task',
-        builder: (_, _) => const TransferTaskPage(),
+        builder: (BuildContext context, GoRouterState state) =>
+            TransferTaskPage(fromPlayer: state.extra == true),
       ),
       GoRoute(
         path: '/transfer/records',
@@ -240,4 +240,12 @@ class _MissingRouteArgs extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 兼容旧的「直接传文件列表」调用，统一成发送请求。
+TransferSendRequest _sendRequestFrom(Object? extra) {
+  if (extra is TransferSendRequest) return extra;
+  return TransferSendRequest(
+    files: extra is List<TransferFile> ? extra : const <TransferFile>[],
+  );
 }

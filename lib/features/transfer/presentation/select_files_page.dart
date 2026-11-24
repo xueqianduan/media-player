@@ -8,6 +8,7 @@
 // - 跨类型跨文件夹的全局多选、已选清单与底部操作栏
 // -------------------------------------------------------------------------
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -38,10 +39,14 @@ class SelectFilesPage extends StatefulWidget {
   const SelectFilesPage({
     super.key,
     this.initialFiles = const <TransferFile>[],
+    this.fromPlayer = false,
   });
 
   /// 从视频分享入口带进来的预选文件。
   final List<TransferFile> initialFiles;
+
+  /// 由播放控制台发起：首屏直接进入确认态，完成后沿路由栈返回播放器。
+  final bool fromPlayer;
 
   @override
   State<SelectFilesPage> createState() => _SelectFilesPageState();
@@ -61,7 +66,12 @@ class _SelectFilesPageState extends State<SelectFilesPage> {
   String? _error;
 
   final Map<String, TransferFile> _selected = <String, TransferFile>{};
+  final Set<String> _resolving = <String>{};
   bool _showSelected = false;
+  bool _validating = false;
+  String? _selectionError;
+
+  bool get _shareMode => widget.fromPlayer;
 
   @override
   void initState() {
@@ -69,7 +79,13 @@ class _SelectFilesPageState extends State<SelectFilesPage> {
     for (final TransferFile file in widget.initialFiles) {
       _selected[file.id] = file;
     }
-    _load();
+    if (_shareMode) {
+      // 分享首屏直接展示已选清单，不再请求相册权限或加载列表。
+      _showSelected = true;
+      _resolveInitialSizes();
+    } else {
+      _load();
+    }
   }
 
   // ---------------------------------------------------------------- 数据加载
@@ -185,6 +201,84 @@ class _SelectFilesPageState extends State<SelectFilesPage> {
     } on Object {
       return 0;
     }
+  }
+
+  // ------------------------------------------------------- 分享文件解析与校验
+
+  /// 预选文件可能只有媒体库记录的定位信息，异步补齐可读路径与真实大小。
+  void _resolveInitialSizes() {
+    for (final TransferFile file in _selected.values.toList()) {
+      if (file.size > 0) continue;
+      _resolving.add(file.id);
+      unawaited(_fillSize(file));
+    }
+  }
+
+  Future<void> _fillSize(TransferFile file) async {
+    TransferFile resolved = file;
+    try {
+      resolved = await _resolveTransferFile(file);
+    } on Object {
+      // 保留原记录，点「下一步」时给出具体原因。
+    }
+    if (!mounted) return;
+    setState(() {
+      _resolving.remove(file.id);
+      if (_selected.containsKey(file.id)) _selected[file.id] = resolved;
+    });
+  }
+
+  /// 把媒体记录解析成 Android 能直接读取的路径，并补齐大小。
+  Future<TransferFile> _resolveTransferFile(TransferFile file) async {
+    final String path = file.path;
+    if (path.startsWith('/')) {
+      final File local = File(path);
+      if (await local.exists()) {
+        final int size = file.size > 0 ? file.size : await local.length();
+        return file.copyWith(path: path, size: size);
+      }
+    }
+
+    final AssetEntity? asset = await _assetFor(file.id);
+    if (asset != null) {
+      try {
+        final File? local = await asset.file.timeout(
+          const Duration(seconds: 8),
+        );
+        if (local != null && await local.exists()) {
+          final int size = await local.length();
+          return file.copyWith(path: local.path, size: size);
+        }
+      } on Object {
+        // 权限被撤回或资源已删除，交给下面统一报错。
+      }
+    }
+
+    // content:// 由原生 ContentResolver 读取，Dart 侧无法直接判断。
+    if (path.startsWith('content://') || path.startsWith('file://')) {
+      return file;
+    }
+    throw StateError('文件已不可访问：${file.name}');
+  }
+
+  Future<AssetEntity?> _assetFor(String id) async {
+    if (id.isEmpty) return null;
+    try {
+      return await AssetEntity.fromId(id).timeout(const Duration(seconds: 6));
+    } on Object {
+      return null;
+    }
+  }
+
+  String _sizeLabel(TransferFile file) {
+    if (_resolving.contains(file.id)) return '正在读取大小…';
+    if (file.size <= 0) return '大小未知';
+    return formatBytes(file.size);
+  }
+
+  String _describeError(Object error) {
+    if (error is StateError) return error.message.toString();
+    return '$error';
   }
 
   // ------------------------------------------------------------------ 选择
@@ -323,15 +417,118 @@ class _SelectFilesPageState extends State<SelectFilesPage> {
         child: Column(
           children: <Widget>[
             _buildHeader(context),
-            _buildTabs(context),
-            if (_type.supportsFolders && _folder == null)
-              _buildFolderSwitch(context),
-            Expanded(child: _buildBody(context)),
-            if (_showSelected) _buildSelectedPanel(context),
+            if (!_shareMode) ...<Widget>[
+              _buildTabs(context),
+              if (_type.supportsFolders && _folder == null)
+                _buildFolderSwitch(context),
+            ],
+            Expanded(
+              child: _shareMode
+                  ? _buildShareConfirm(context)
+                  : _buildBody(context),
+            ),
+            if (_selectionError != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                child: Text(
+                  _selectionError!,
+                  style: const TextStyle(
+                    color: Color(0xFFE24B4A),
+                    fontSize: 11.5,
+                  ),
+                ),
+              ),
+            if (_showSelected && !_shareMode) _buildSelectedPanel(context),
             _buildBottomBar(context),
           ],
         ),
       ),
+    );
+  }
+
+  /// 分享确认态：只展示本次要发送的视频与大小，不再展示相册浏览。
+  Widget _buildShareConfirm(BuildContext context) {
+    final List<TransferFile> files = _selected.values.toList();
+    if (files.isEmpty) {
+      return Center(
+        child: Text(
+          '没有要发送的视频',
+          style: TextStyle(fontSize: 12.5, color: context.textSecondary),
+        ),
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      children: <Widget>[
+        Text(
+          '将发送原始视频文件',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: context.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 5),
+        Text(
+          '文件内的音轨和字幕随文件一起保留。对方需要打开 LumiPlayer 并出示接收码。',
+          style: TextStyle(
+            fontSize: 11.5,
+            height: 1.6,
+            color: context.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 16),
+        for (final TransferFile file in files) ...<Widget>[
+          AppCard(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: <Widget>[
+                Container(
+                  width: 40,
+                  height: 40,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: context.softPrimary,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.movie_rounded,
+                    size: 20,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        file.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: context.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${_sizeLabel(file)} · ${file.source}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: context.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
+      ],
     );
   }
 
@@ -361,7 +558,7 @@ class _SelectFilesPageState extends State<SelectFilesPage> {
           ),
           Expanded(
             child: Text(
-              inFolder ? _folder!.name : '选择文件',
+              inFolder ? _folder!.name : (_shareMode ? '发送视频' : '选择文件'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -371,7 +568,9 @@ class _SelectFilesPageState extends State<SelectFilesPage> {
               ),
             ),
           ),
-          if (_assets.isNotEmpty && !(_folderMode && _folder == null))
+          if (!_shareMode &&
+              _assets.isNotEmpty &&
+              !(_folderMode && _folder == null))
             TextButton(
               onPressed: _toggleSelectAll,
               child: Text(_allSelected ? '取消全选' : '全选'),
@@ -689,7 +888,7 @@ class _SelectFilesPageState extends State<SelectFilesPage> {
                             ),
                           ),
                           Text(
-                            formatBytes(file.size),
+                            _sizeLabel(file),
                             style: TextStyle(
                               fontSize: 10,
                               color: context.textSecondary,
@@ -720,6 +919,10 @@ class _SelectFilesPageState extends State<SelectFilesPage> {
 
   Widget _buildBottomBar(BuildContext context) {
     final int count = _selected.length;
+    final bool ready = count > 0 && _resolving.isEmpty && !_validating;
+    final String summary = _shareMode
+        ? (count == 0 ? '没有可发送的视频' : '将发送 $count 个视频')
+        : '已选 $count 项';
     return Container(
       decoration: BoxDecoration(
         color: context.cardColor,
@@ -734,50 +937,64 @@ class _SelectFilesPageState extends State<SelectFilesPage> {
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
           child: Row(
             children: <Widget>[
-              GestureDetector(
-                onTap: count == 0
-                    ? null
-                    : () => setState(() => _showSelected = !_showSelected),
-                behavior: HitTestBehavior.opaque,
-                child: Row(
-                  children: <Widget>[
-                    Text(
-                      '已选 $count 项',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        color: count == 0
-                            ? context.textSecondary
-                            : AppColors.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Icon(
-                      _showSelected
-                          ? Icons.keyboard_arrow_down_rounded
-                          : Icons.keyboard_arrow_up_rounded,
-                      size: 18,
+              if (_shareMode)
+                Expanded(
+                  child: Text(
+                    summary,
+                    style: TextStyle(
+                      fontSize: 12.5,
                       color: count == 0
                           ? context.textSecondary
                           : AppColors.primary,
+                      fontWeight: FontWeight.w600,
                     ),
-                  ],
+                  ),
+                )
+              else
+                GestureDetector(
+                  onTap: count == 0
+                      ? null
+                      : () => setState(() => _showSelected = !_showSelected),
+                  behavior: HitTestBehavior.opaque,
+                  child: Row(
+                    children: <Widget>[
+                      Text(
+                        summary,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: count == 0
+                              ? context.textSecondary
+                              : AppColors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Icon(
+                        _showSelected
+                            ? Icons.keyboard_arrow_down_rounded
+                            : Icons.keyboard_arrow_up_rounded,
+                        size: 18,
+                        color: count == 0
+                            ? context.textSecondary
+                            : AppColors.primary,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
               const SizedBox(width: 12),
               Expanded(
                 child: SizedBox(
                   height: 42,
                   child: FilledButton(
-                    onPressed: count == 0 ? null : () => _next(count),
+                    onPressed: ready ? _next : null,
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
                       ),
                     ),
-                    child: const Text(
-                      '下一步',
-                      style: TextStyle(
+                    child: Text(
+                      _validating ? '检查中…' : '下一步',
+                      style: const TextStyle(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w600,
                       ),
@@ -792,9 +1009,52 @@ class _SelectFilesPageState extends State<SelectFilesPage> {
     );
   }
 
-  void _next(int count) {
-    if (_selected.isEmpty) return;
-    context.push('/transfer/scan', extra: _selected.values.toList());
+  /// 进入扫码前核对每个文件：存在、可读、大小已知，并冻结本次清单。
+  Future<void> _next() async {
+    if (_selected.isEmpty || _validating) return;
+    setState(() {
+      _validating = true;
+      _selectionError = null;
+    });
+
+    final List<TransferFile> validated = <TransferFile>[];
+    try {
+      for (final TransferFile file in _selected.values) {
+        final TransferFile resolved = await _resolveTransferFile(file);
+        final bool uri =
+            resolved.path.startsWith('content://') ||
+            resolved.path.startsWith('file://');
+        int size = resolved.size;
+        if (size <= 0 && !uri && resolved.path.startsWith('/')) {
+          size = await File(resolved.path).length();
+        }
+        if (size <= 0) throw StateError('无法读取文件大小：${file.name}');
+        validated.add(resolved.copyWith(size: size));
+      }
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _validating = false;
+        _selectionError = _describeError(error);
+      });
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _validating = false);
+
+    final bool? backToPlayer = await context.push<bool>(
+      '/transfer/scan',
+      extra: TransferSendRequest(
+        files: validated,
+        fromPlayer: widget.fromPlayer,
+      ),
+    );
+    if (!mounted) return;
+    if (backToPlayer == true) {
+      context.pop();
+      return;
+    }
+    // 从扫码或任务页返回时保留清单，方便修改后重新发送。
   }
 }
 
