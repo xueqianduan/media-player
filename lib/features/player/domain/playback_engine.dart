@@ -41,6 +41,12 @@ abstract interface class VideoPlaybackEngine {
   /// 关闭字幕显示，不卸载文件里的字幕轨。
   Future<void> disableSubtitles();
 
+  /// 切换到当前文件中的指定内嵌音轨。
+  Future<void> selectAudioTrack(String trackId);
+
+  /// 恢复文件的自动选音轨策略。
+  Future<void> selectAutomaticAudio();
+
   Future<void> dispose();
 
   Stream<Duration> get positionStream;
@@ -59,6 +65,11 @@ abstract interface class VideoPlaybackEngine {
   Stream<PlaybackSubtitles> get subtitlesStream;
 
   PlaybackSubtitles get subtitles;
+
+  /// 当前视频的音轨与选择状态。
+  Stream<PlaybackAudio> get audioStream;
+
+  PlaybackAudio get audio;
 
   Duration get position;
 

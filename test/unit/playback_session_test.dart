@@ -235,6 +235,12 @@ class _FakeEngine implements VideoPlaybackEngine {
   Future<void> disableSubtitles() async {}
 
   @override
+  Future<void> selectAudioTrack(String trackId) async {}
+
+  @override
+  Future<void> selectAutomaticAudio() async {}
+
+  @override
   Future<void> dispose() async {
     await _position.close();
     await _duration.close();
@@ -268,6 +274,12 @@ class _FakeEngine implements VideoPlaybackEngine {
 
   @override
   PlaybackSubtitles get subtitles => const PlaybackSubtitles.loading();
+
+  @override
+  Stream<PlaybackAudio> get audioStream => const Stream<PlaybackAudio>.empty();
+
+  @override
+  PlaybackAudio get audio => const PlaybackAudio.loading();
 
   @override
   Duration get position => _positionValue;

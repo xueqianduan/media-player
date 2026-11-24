@@ -70,6 +70,9 @@ class PlaybackSession {
       engine.subtitlesStream.listen((PlaybackSubtitles value) {
         if (!_disposed) subtitles.value = value;
       }),
+      engine.audioStream.listen((PlaybackAudio value) {
+        if (!_disposed) audio.value = value;
+      }),
     ]);
     _autoSaveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (playing.value) saveProgress();
@@ -100,6 +103,11 @@ class PlaybackSession {
       ValueNotifier<PlaybackSubtitles>(const PlaybackSubtitles.loading());
   final ValueNotifier<bool> subtitleBusy = ValueNotifier<bool>(false);
   final ValueNotifier<String?> subtitleError = ValueNotifier<String?>(null);
+  final ValueNotifier<PlaybackAudio> audio = ValueNotifier<PlaybackAudio>(
+    const PlaybackAudio.loading(),
+  );
+  final ValueNotifier<bool> audioBusy = ValueNotifier<bool>(false);
+  final ValueNotifier<String?> audioError = ValueNotifier<String?>(null);
 
   final List<StreamSubscription<dynamic>> _subscriptions =
       <StreamSubscription<dynamic>>[];
@@ -107,6 +115,7 @@ class PlaybackSession {
   bool _disposed = false;
   bool _opening = false;
   bool _changingSubtitle = false;
+  bool _changingAudio = false;
   int _mediaRevision = 0;
 
   MediaItem? get currentItem {
@@ -157,6 +166,8 @@ class PlaybackSession {
     duration.value = Duration.zero;
     subtitles.value = const PlaybackSubtitles.loading();
     subtitleError.value = null;
+    audio.value = const PlaybackAudio.loading();
+    audioError.value = null;
     status.value = PlaybackStatus.initializing;
     try {
       debugPrint(
@@ -175,6 +186,7 @@ class PlaybackSession {
           .timeout(const Duration(seconds: 25));
       await engine.setSpeed(speed.value);
       subtitles.value = engine.subtitles;
+      audio.value = engine.audio;
       status.value = autoPlay ? PlaybackStatus.playing : PlaybackStatus.paused;
     } on TimeoutException {
       error.value = '加载超时，可能是文件过大或存储读取过慢，请重试';
@@ -284,6 +296,41 @@ class PlaybackSession {
     }
   }
 
+  // ===== 内嵌音轨 =====
+  Future<void> selectAudioTrack(String trackId) {
+    return _changeAudio(() => engine.selectAudioTrack(trackId));
+  }
+
+  Future<void> selectAutomaticAudio() {
+    return _changeAudio(engine.selectAutomaticAudio);
+  }
+
+  Future<void> _changeAudio(Future<void> Function() change) async {
+    if (_disposed || _opening || _changingAudio) return;
+    if (status.value == PlaybackStatus.idle ||
+        status.value == PlaybackStatus.initializing ||
+        status.value == PlaybackStatus.error) {
+      return;
+    }
+    final int revision = _mediaRevision;
+    _changingAudio = true;
+    audioBusy.value = true;
+    audioError.value = null;
+    try {
+      await change();
+      if (_disposed || revision != _mediaRevision) return;
+      audio.value = engine.audio;
+    } on Object catch (message) {
+      debugPrint('[LumiPlayer] change audio failed: $message');
+      if (!_disposed && revision == _mediaRevision) {
+        audioError.value = '切换失败，请重试';
+      }
+    } finally {
+      _changingAudio = false;
+      if (!_disposed) audioBusy.value = false;
+    }
+  }
+
   Future<void> next() async {
     final String? id = queue.next();
     if (id == null) return;
@@ -369,5 +416,8 @@ class PlaybackSession {
     subtitles.dispose();
     subtitleBusy.dispose();
     subtitleError.dispose();
+    audio.dispose();
+    audioBusy.dispose();
+    audioError.dispose();
   }
 }

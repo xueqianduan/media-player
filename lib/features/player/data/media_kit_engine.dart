@@ -32,10 +32,16 @@ class MediaKitPlaybackEngine implements VideoPlaybackEngine {
   late final StreamSubscription<Tracks> _trackListSubscription;
   final StreamController<PlaybackSubtitles> _subtitlesController =
       StreamController<PlaybackSubtitles>.broadcast();
+  final StreamController<PlaybackAudio> _audioController =
+      StreamController<PlaybackAudio>.broadcast();
   List<SubtitleTrackInfo> _subtitleTracks = const <SubtitleTrackInfo>[];
   SubtitleSelection _subtitleSelection = const SubtitleSelection.auto();
   PlaybackSubtitles _subtitles = const PlaybackSubtitles.loading();
   bool _subtitlesLoading = true;
+  List<AudioTrackInfo> _audioTracks = const <AudioTrackInfo>[];
+  AudioSelection _audioSelection = const AudioSelection.auto();
+  PlaybackAudio _audio = const PlaybackAudio.loading();
+  bool _audioLoading = true;
   double _volume = 1;
 
   Player get player => _player;
@@ -51,6 +57,10 @@ class MediaKitPlaybackEngine implements VideoPlaybackEngine {
     _subtitleTracks = const <SubtitleTrackInfo>[];
     _subtitleSelection = const SubtitleSelection.auto();
     _publishSubtitles();
+    _audioLoading = true;
+    _audioTracks = const <AudioTrackInfo>[];
+    _audioSelection = const AudioSelection.auto();
+    _publishAudio();
 
     final Stopwatch watch = Stopwatch()..start();
     try {
@@ -82,10 +92,17 @@ class MediaKitPlaybackEngine implements VideoPlaybackEngine {
       } on Object catch (error) {
         debugPrint('[LumiPlayer] reset subtitle track failed: $error');
       }
+      try {
+        await _player.setAudioTrack(AudioTrack.auto());
+      } on Object catch (error) {
+        debugPrint('[LumiPlayer] reset audio track failed: $error');
+      }
       await _player.setVolume(_volume * 100);
     } finally {
       _subtitlesLoading = false;
       _subtitleSelection = const SubtitleSelection.auto();
+      _audioLoading = false;
+      _audioSelection = const AudioSelection.auto();
       _replaceTracks(_player.state.tracks);
     }
   }
@@ -170,6 +187,28 @@ class MediaKitPlaybackEngine implements VideoPlaybackEngine {
     }
     _subtitleTracks = List<SubtitleTrackInfo>.unmodifiable(visible);
     _publishSubtitles();
+    _replaceAudioTracks(tracks);
+  }
+
+  void _replaceAudioTracks(Tracks tracks) {
+    final List<AudioTrackInfo> visible = <AudioTrackInfo>[];
+    for (final AudioTrack track in tracks.audio) {
+      // auto / no 是虚拟选项；首版只展示文件内嵌音轨。
+      if (track.id == 'auto' || track.id == 'no' || track.uri) continue;
+      visible.add(
+        AudioTrackInfo(
+          id: track.id,
+          title: track.title,
+          language: track.language,
+          codec: track.codec,
+          channels: track.channels,
+          channelsCount: track.channelscount,
+          isDefault: track.isDefault ?? false,
+        ),
+      );
+    }
+    _audioTracks = List<AudioTrackInfo>.unmodifiable(visible);
+    _publishAudio();
   }
 
   void _publishSubtitles() {
@@ -180,6 +219,17 @@ class MediaKitPlaybackEngine implements VideoPlaybackEngine {
     );
     if (!_subtitlesController.isClosed) {
       _subtitlesController.add(_subtitles);
+    }
+  }
+
+  void _publishAudio() {
+    _audio = PlaybackAudio(
+      tracks: _audioTracks,
+      selection: _audioSelection,
+      loading: _audioLoading,
+    );
+    if (!_audioController.isClosed) {
+      _audioController.add(_audio);
     }
   }
 
@@ -244,6 +294,53 @@ class MediaKitPlaybackEngine implements VideoPlaybackEngine {
     );
   }
 
+  Future<void> _applyAudioTrack(
+    AudioTrack track,
+    AudioSelection selection,
+  ) async {
+    try {
+      await _player.setAudioTrack(track);
+    } on Object catch (error) {
+      debugPrint('[LumiPlayer] select audio failed: $error');
+      throw const PlaybackException('切换音轨失败');
+    }
+    _audioSelection = selection;
+    _publishAudio();
+  }
+
+  @override
+  Future<void> selectAudioTrack(String trackId) async {
+    if (_audioLoading) {
+      throw const PlaybackException('音轨仍在读取');
+    }
+    AudioTrackInfo? info;
+    for (final AudioTrackInfo track in _audioTracks) {
+      if (track.id == trackId) {
+        info = track;
+        break;
+      }
+    }
+    if (info == null) {
+      throw const PlaybackException('音轨已失效');
+    }
+    AudioTrack? target;
+    for (final AudioTrack track in _player.state.tracks.audio) {
+      if (track.id == trackId && !track.uri) {
+        target = track;
+        break;
+      }
+    }
+    if (target == null) {
+      throw const PlaybackException('音轨已失效');
+    }
+    await _applyAudioTrack(target, AudioSelection.track(trackId));
+  }
+
+  @override
+  Future<void> selectAutomaticAudio() {
+    return _applyAudioTrack(AudioTrack.auto(), const AudioSelection.auto());
+  }
+
   @override
   Future<void> play() => _player.play();
 
@@ -266,6 +363,7 @@ class MediaKitPlaybackEngine implements VideoPlaybackEngine {
   Future<void> dispose() async {
     await _trackListSubscription.cancel();
     await _subtitlesController.close();
+    await _audioController.close();
     await _player.dispose();
   }
 
@@ -292,6 +390,12 @@ class MediaKitPlaybackEngine implements VideoPlaybackEngine {
 
   @override
   PlaybackSubtitles get subtitles => _subtitles;
+
+  @override
+  Stream<PlaybackAudio> get audioStream => _audioController.stream;
+
+  @override
+  PlaybackAudio get audio => _audio;
 
   @override
   Duration get position => _player.state.position;

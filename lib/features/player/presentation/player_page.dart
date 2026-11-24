@@ -775,7 +775,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                     child: switch (_panel) {
                       _PlayerPanel.speed => _buildSpeedPanel(),
                       _PlayerPanel.queue => _buildQueuePanel(),
-                      _PlayerPanel.subtitles => _buildSubtitlePanel(),
+                      _PlayerPanel.tracks => _buildTracksPanel(),
                       _PlayerPanel.more => _buildMorePanel(),
                       null => const SizedBox.shrink(),
                     },
@@ -918,41 +918,49 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           const SizedBox(height: 22),
           ValueListenableBuilder<PlaybackSubtitles>(
             valueListenable: _session.subtitles,
-            builder: (BuildContext context, PlaybackSubtitles state, _) {
-              return GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => _openPanel(_PlayerPanel.subtitles),
-                child: Row(
-                  children: <Widget>[
-                    const Icon(
-                      Icons.subtitles_rounded,
-                      size: 16,
-                      color: Colors.white54,
-                    ),
-                    const SizedBox(width: 7),
-                    const Text(
-                      '字幕',
-                      style: TextStyle(color: Colors.white70, fontSize: 12.5),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _subtitleSummary(state),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white38,
-                          fontSize: 11.5,
+            builder: (BuildContext context, PlaybackSubtitles subtitles, _) {
+              return ValueListenableBuilder<PlaybackAudio>(
+                valueListenable: _session.audio,
+                builder: (BuildContext context, PlaybackAudio audio, _) {
+                  return GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _openPanel(_PlayerPanel.tracks),
+                    child: Row(
+                      children: <Widget>[
+                        const Icon(
+                          Icons.subtitles_rounded,
+                          size: 16,
+                          color: Colors.white54,
                         ),
-                      ),
+                        const SizedBox(width: 7),
+                        const Text(
+                          '字幕与音轨',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _tracksSummary(subtitles, audio),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white38,
+                              fontSize: 11.5,
+                            ),
+                          ),
+                        ),
+                        const Icon(
+                          Icons.chevron_right_rounded,
+                          size: 17,
+                          color: Colors.white30,
+                        ),
+                      ],
                     ),
-                    const Icon(
-                      Icons.chevron_right_rounded,
-                      size: 17,
-                      color: Colors.white30,
-                    ),
-                  ],
-                ),
+                  );
+                },
               );
             },
           ),
@@ -991,6 +999,27 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     );
   }
 
+  String _tracksSummary(PlaybackSubtitles subtitles, PlaybackAudio audio) {
+    if (subtitles.loading || audio.loading) return '读取中…';
+    return '字幕：${_subtitleSummary(subtitles)} · 音轨：${_audioSummary(audio)}';
+  }
+
+  String _audioSummary(PlaybackAudio state) {
+    if (state.loading) return '读取中…';
+    if (!state.hasTracks) return '当前视频无音轨';
+    switch (state.selection.mode) {
+      case AudioSelectionMode.auto:
+        return '自动';
+      case AudioSelectionMode.track:
+        for (int i = 0; i < state.tracks.length; i++) {
+          if (state.tracks[i].id == state.selection.trackId) {
+            return _audioDisplayTitle(state, i);
+          }
+        }
+        return '已选择';
+    }
+  }
+
   String _subtitleSummary(PlaybackSubtitles state) {
     if (state.loading) return '读取中…';
     if (!state.hasTracks) return '当前视频无字幕';
@@ -1018,14 +1047,37 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     if (!track.supportsTextRendering) {
       parts.add('图片字幕，暂不支持');
     } else {
-      final String? codec = _subtitleCodecLabel(track.codec);
+      final String? codec = _codecLabel(track.codec);
       if (codec != null) parts.add(codec);
     }
     if (track.isDefault) parts.add('默认');
     return parts.join(' · ');
   }
 
-  String? _subtitleCodecLabel(String? codec) {
+  String _audioDisplayTitle(PlaybackAudio state, int index) {
+    final String base = state.tracks[index].displayTitle(index);
+    int duplicates = 0;
+    for (int i = 0; i < state.tracks.length; i++) {
+      if (state.tracks[i].displayTitle(i) == base) duplicates++;
+    }
+    return duplicates > 1 ? '$base（${index + 1}）' : base;
+  }
+
+  String _audioTrackDetail(AudioTrackInfo track) {
+    final List<String> parts = <String>[];
+    if ((track.title?.trim().isNotEmpty ?? false) &&
+        track.languageLabel != null) {
+      parts.add(track.languageLabel!);
+    }
+    final String? channels = track.channelLabel;
+    if (channels != null) parts.add(channels);
+    final String? codec = _codecLabel(track.codec);
+    if (codec != null) parts.add(codec);
+    if (track.isDefault) parts.add('默认');
+    return parts.join(' · ');
+  }
+
+  String? _codecLabel(String? codec) {
     final String value = codec?.trim().toLowerCase() ?? '';
     if (value.isEmpty) return null;
     switch (value) {
@@ -1049,132 +1101,239 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     }
   }
 
-  Widget _buildSubtitlePanel() {
+  Widget _buildTracksPanel() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 6, 14, 24),
-      child: ValueListenableBuilder<PlaybackSubtitles>(
-        valueListenable: _session.subtitles,
-        builder: (BuildContext context, PlaybackSubtitles state, _) {
-          return ValueListenableBuilder<bool>(
-            valueListenable: _session.subtitleBusy,
-            builder: (BuildContext context, bool busy, _) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Row(
-                    children: <Widget>[
-                      const Text(
-                        '字幕',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      if (state.hasTracks)
-                        Text(
-                          '${state.tracks.length} 条',
-                          style: const TextStyle(
-                            color: Colors.white38,
-                            fontSize: 11,
-                          ),
-                        ),
-                      const Spacer(),
-                      IconButton(
-                        onPressed: _closePanel,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints.tightFor(
-                          width: 32,
-                          height: 32,
-                        ),
-                        icon: const Icon(
-                          Icons.close_rounded,
-                          color: Colors.white38,
-                          size: 18,
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (busy)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(2),
-                        child: const LinearProgressIndicator(
-                          minHeight: 2,
-                          backgroundColor: Colors.white12,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                    ),
-                  if (state.loading)
-                    _buildSubtitleMessage('正在读取字幕…')
-                  else if (!state.hasTracks)
-                    _buildSubtitleMessage('当前视频无可用字幕')
-                  else ...<Widget>[
-                    const SizedBox(height: 2),
-                    _SubtitleOption(
-                      title: '自动',
-                      detail: '跟随文件默认字幕',
-                      selected:
-                          state.selection.mode == SubtitleSelectionMode.auto,
-                      enabled: !busy,
-                      onTap: () =>
-                          unawaited(_session.selectAutomaticSubtitle()),
-                    ),
-                    _SubtitleOption(
-                      title: '关闭',
-                      detail: '不显示字幕',
-                      selected:
-                          state.selection.mode == SubtitleSelectionMode.off,
-                      enabled: !busy,
-                      onTap: () => unawaited(_session.disableSubtitles()),
-                    ),
-                    const Divider(height: 18, color: Colors.white12),
-                    for (int i = 0; i < state.tracks.length; i++)
-                      _SubtitleOption(
-                        title: state.tracks[i].displayTitle(i),
-                        detail: _subtitleTrackDetail(state.tracks[i]),
-                        selected:
-                            state.selection.mode ==
-                                SubtitleSelectionMode.track &&
-                            state.selection.trackId == state.tracks[i].id,
-                        enabled: !busy && state.tracks[i].supportsTextRendering,
-                        onTap: () => unawaited(
-                          _session.selectSubtitleTrack(state.tracks[i].id),
-                        ),
-                      ),
-                  ],
-                  ValueListenableBuilder<String?>(
-                    valueListenable: _session.subtitleError,
-                    builder: (BuildContext context, String? message, _) {
-                      if (message == null) return const SizedBox.shrink();
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: Text(
-                          message,
-                          style: const TextStyle(
-                            color: Color(0xFFFF9B9B),
-                            fontSize: 11.5,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              );
-            },
-          );
-        },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Text(
+                '字幕与音轨',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: _closePanel,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(
+                  width: 32,
+                  height: 32,
+                ),
+                icon: const Icon(
+                  Icons.close_rounded,
+                  color: Colors.white38,
+                  size: 18,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _buildTrackSectionTitle('字幕'),
+          _buildSubtitleSection(),
+          const SizedBox(height: 18),
+          _buildTrackSectionTitle('音轨'),
+          _buildAudioSection(),
+        ],
       ),
     );
   }
 
-  Widget _buildSubtitleMessage(String message) {
+  Widget _buildTrackSectionTitle(String title) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 2),
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: <Widget>[
+          Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.4,
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Expanded(child: Divider(height: 1, color: Colors.white12)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubtitleSection() {
+    return ValueListenableBuilder<PlaybackSubtitles>(
+      valueListenable: _session.subtitles,
+      builder: (BuildContext context, PlaybackSubtitles state, _) {
+        return ValueListenableBuilder<bool>(
+          valueListenable: _session.subtitleBusy,
+          builder: (BuildContext context, bool busy, _) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                _buildTrackProgress(busy),
+                if (state.loading)
+                  _buildTrackMessage('正在读取字幕…')
+                else if (!state.hasTracks)
+                  _buildTrackMessage('当前视频无可用字幕')
+                else ...<Widget>[
+                  const SizedBox(height: 2),
+                  _TrackOption(
+                    title: '自动',
+                    detail: '跟随文件默认字幕',
+                    selected:
+                        state.selection.mode == SubtitleSelectionMode.auto,
+                    enabled: !busy,
+                    onTap: () => unawaited(_session.selectAutomaticSubtitle()),
+                  ),
+                  _TrackOption(
+                    title: '关闭',
+                    detail: '不显示字幕',
+                    selected: state.selection.mode == SubtitleSelectionMode.off,
+                    enabled: !busy,
+                    onTap: () => unawaited(_session.disableSubtitles()),
+                  ),
+                  const Divider(height: 18, color: Colors.white12),
+                  for (int i = 0; i < state.tracks.length; i++)
+                    _TrackOption(
+                      title: state.tracks[i].displayTitle(i),
+                      detail: _subtitleTrackDetail(state.tracks[i]),
+                      selected:
+                          state.selection.mode == SubtitleSelectionMode.track &&
+                          state.selection.trackId == state.tracks[i].id,
+                      enabled: !busy && state.tracks[i].supportsTextRendering,
+                      onTap: () => unawaited(
+                        _session.selectSubtitleTrack(state.tracks[i].id),
+                      ),
+                    ),
+                ],
+                _buildTrackError(_session.subtitleError),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildAudioSection() {
+    return ValueListenableBuilder<PlaybackAudio>(
+      valueListenable: _session.audio,
+      builder: (BuildContext context, PlaybackAudio state, _) {
+        return ValueListenableBuilder<bool>(
+          valueListenable: _session.audioBusy,
+          builder: (BuildContext context, bool busy, _) {
+            if (state.loading) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  _buildTrackProgress(busy),
+                  _buildTrackMessage('正在读取音轨…'),
+                ],
+              );
+            }
+            if (!state.hasTracks) {
+              return _buildTrackMessage('当前视频无音轨');
+            }
+            if (state.tracks.length == 1) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const SizedBox(height: 2),
+                  _TrackOption(
+                    title: _audioDisplayTitle(state, 0),
+                    detail: _audioSingleDetail(state.tracks.first),
+                    selected: true,
+                    enabled: true,
+                    readOnly: true,
+                    onTap: () {},
+                  ),
+                  _buildTrackError(_session.audioError),
+                ],
+              );
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                _buildTrackProgress(busy),
+                const SizedBox(height: 2),
+                _TrackOption(
+                  title: '自动',
+                  detail: '跟随文件默认音轨',
+                  selected: state.selection.mode == AudioSelectionMode.auto,
+                  enabled: !busy,
+                  onTap: () => unawaited(_session.selectAutomaticAudio()),
+                ),
+                const Divider(height: 18, color: Colors.white12),
+                for (int i = 0; i < state.tracks.length; i++)
+                  _TrackOption(
+                    title: _audioDisplayTitle(state, i),
+                    detail: _audioTrackDetail(state.tracks[i]),
+                    selected:
+                        state.selection.mode == AudioSelectionMode.track &&
+                        state.selection.trackId == state.tracks[i].id,
+                    enabled: !busy,
+                    onTap: () => unawaited(
+                      _session.selectAudioTrack(state.tracks[i].id),
+                    ),
+                  ),
+                _buildTrackError(_session.audioError),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  String _audioSingleDetail(AudioTrackInfo track) {
+    final String detail = _audioTrackDetail(track);
+    return detail.isEmpty ? '当前音轨' : '当前音轨 · $detail';
+  }
+
+  Widget _buildTrackProgress(bool busy) {
+    if (!busy) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(2),
+        child: const LinearProgressIndicator(
+          minHeight: 2,
+          backgroundColor: Colors.white12,
+          color: AppColors.primary,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTrackError(ValueNotifier<String?> listenable) {
+    return ValueListenableBuilder<String?>(
+      valueListenable: listenable,
+      builder: (BuildContext context, String? message, _) {
+        if (message == null) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: Text(
+            message,
+            style: const TextStyle(color: Color(0xFFFF9B9B), fontSize: 11.5),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTrackMessage(String message) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 2),
       child: Text(
         message,
         style: const TextStyle(color: Colors.white38, fontSize: 12.5),
@@ -2247,6 +2406,12 @@ class _FailedEngine implements VideoPlaybackEngine {
   Future<void> disableSubtitles() async {}
 
   @override
+  Future<void> selectAudioTrack(String trackId) async {}
+
+  @override
+  Future<void> selectAutomaticAudio() async {}
+
+  @override
   Future<void> dispose() async => _empty.close();
 
   @override
@@ -2275,6 +2440,12 @@ class _FailedEngine implements VideoPlaybackEngine {
   PlaybackSubtitles get subtitles => const PlaybackSubtitles.loading();
 
   @override
+  Stream<PlaybackAudio> get audioStream => const Stream<PlaybackAudio>.empty();
+
+  @override
+  PlaybackAudio get audio => const PlaybackAudio.loading();
+
+  @override
   Duration get position => Duration.zero;
 
   @override
@@ -2287,31 +2458,33 @@ class _FailedEngine implements VideoPlaybackEngine {
   double get speed => 1;
 }
 
-/// 字幕面板中的一行：标题、说明和选中勾。
-class _SubtitleOption extends StatelessWidget {
-  const _SubtitleOption({
+/// 字幕与音轨面板中的一行：标题、说明和选中勾。
+class _TrackOption extends StatelessWidget {
+  const _TrackOption({
     required this.title,
     required this.detail,
     required this.selected,
     required this.enabled,
     required this.onTap,
+    this.readOnly = false,
   });
 
   final String title;
   final String detail;
   final bool selected;
   final bool enabled;
+  final bool readOnly;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      button: true,
+      button: !readOnly,
       selected: selected,
       enabled: enabled,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: enabled ? onTap : null,
+        onTap: enabled && !readOnly ? onTap : null,
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 2),
           padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
@@ -2432,4 +2605,4 @@ class _SettingsOption extends StatelessWidget {
 }
 
 /// 播放器内嵌面板类型。
-enum _PlayerPanel { speed, more, queue, subtitles }
+enum _PlayerPanel { speed, more, queue, tracks }

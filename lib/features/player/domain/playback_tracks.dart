@@ -2,9 +2,9 @@
 // 功能：播放轨道模型
 //
 // 主要内容：
-// - 内嵌字幕轨道信息
-// - 字幕选择模式（自动 / 关闭 / 指定轨道）
-// - 播放器展示用的字幕状态快照
+// - 内嵌字幕轨道信息与选择状态
+// - 内嵌音轨信息与选择状态
+// - 播放器展示用的轨道状态快照
 // -------------------------------------------------------------------------
 
 /// 字幕当前的选择方式。
@@ -30,6 +30,31 @@ class SubtitleSelection {
   @override
   bool operator ==(Object other) {
     return other is SubtitleSelection &&
+        other.mode == mode &&
+        other.trackId == trackId;
+  }
+
+  @override
+  int get hashCode => Object.hash(mode, trackId);
+}
+
+/// 音轨当前的选择方式。
+enum AudioSelectionMode { auto, track }
+
+/// 音轨选择：自动策略，或指定一条当前文件内的轨道。
+class AudioSelection {
+  const AudioSelection.auto() : mode = AudioSelectionMode.auto, trackId = null;
+
+  const AudioSelection.track(String id)
+    : mode = AudioSelectionMode.track,
+      trackId = id;
+
+  final AudioSelectionMode mode;
+  final String? trackId;
+
+  @override
+  bool operator ==(Object other) {
+    return other is AudioSelection &&
         other.mode == mode &&
         other.trackId == trackId;
   }
@@ -73,12 +98,7 @@ class SubtitleTrackInfo {
   }
 
   /// 语言标签；无法识别时返回原始语言码。
-  String? get languageLabel {
-    final String? value = language?.trim();
-    if (value == null || value.isEmpty) return null;
-    final String key = value.toLowerCase();
-    return _languageNames[key] ?? value;
-  }
+  String? get languageLabel => _localizedLanguage(language);
 
   /// 列表主标题：优先文件内标题，其次语言，最后用序号兜底。
   String displayTitle(int index) {
@@ -86,34 +106,63 @@ class SubtitleTrackInfo {
     if (value != null && value.isNotEmpty) return value;
     return languageLabel ?? '字幕 ${index + 1}';
   }
+}
 
-  static const Map<String, String> _languageNames = <String, String>{
-    'zh': '中文',
-    'chi': '中文',
-    'zho': '中文',
-    'zh-cn': '简体中文',
-    'zh-hans': '简体中文',
-    'zh-sg': '简体中文',
-    'zh-tw': '繁体中文',
-    'zh-hk': '繁体中文',
-    'zh-hant': '繁体中文',
-    'en': '英语',
-    'eng': '英语',
-    'ja': '日语',
-    'jpn': '日语',
-    'ko': '韩语',
-    'kor': '韩语',
-    'fr': '法语',
-    'fre': '法语',
-    'fra': '法语',
-    'de': '德语',
-    'ger': '德语',
-    'deu': '德语',
-    'es': '西班牙语',
-    'spa': '西班牙语',
-    'ru': '俄语',
-    'rus': '俄语',
-  };
+/// 当前视频里的一条内嵌音轨。
+///
+/// [id] 是文件内的原始轨道 ID，名称、语言和声道只用于展示。
+class AudioTrackInfo {
+  const AudioTrackInfo({
+    required this.id,
+    required this.title,
+    required this.language,
+    required this.codec,
+    required this.channels,
+    required this.channelsCount,
+    required this.isDefault,
+  });
+
+  final String id;
+  final String? title;
+  final String? language;
+  final String? codec;
+  final String? channels;
+  final int? channelsCount;
+  final bool isDefault;
+
+  /// 语言标签；无法识别时返回原始语言码。
+  String? get languageLabel => _localizedLanguage(language);
+
+  /// 声道标签，优先使用文件里的声道布局，其次使用声道数量。
+  String? get channelLabel {
+    final String? layout = channels?.trim();
+    if (layout != null && layout.isNotEmpty) {
+      switch (layout.toLowerCase()) {
+        case 'mono':
+          return '单声道';
+        case 'stereo':
+          return '立体声';
+      }
+      return layout;
+    }
+    final int? count = channelsCount;
+    if (count == null || count <= 0) return null;
+    switch (count) {
+      case 1:
+        return '单声道';
+      case 2:
+        return '立体声';
+      default:
+        return '$count 声道';
+    }
+  }
+
+  /// 列表主标题：优先文件内标题，其次语言，最后用序号兜底。
+  String displayTitle(int index) {
+    final String? value = title?.trim();
+    if (value != null && value.isNotEmpty) return value;
+    return languageLabel ?? '音轨 ${index + 1}';
+  }
 }
 
 /// 字幕面板使用的不可变状态快照。
@@ -134,4 +183,58 @@ class PlaybackSubtitles {
   final bool loading;
 
   bool get hasTracks => tracks.isNotEmpty;
+}
+
+/// 音轨面板使用的不可变状态快照。
+class PlaybackAudio {
+  const PlaybackAudio({
+    required this.tracks,
+    required this.selection,
+    required this.loading,
+  });
+
+  const PlaybackAudio.loading()
+    : tracks = const <AudioTrackInfo>[],
+      selection = const AudioSelection.auto(),
+      loading = true;
+
+  final List<AudioTrackInfo> tracks;
+  final AudioSelection selection;
+  final bool loading;
+
+  bool get hasTracks => tracks.isNotEmpty;
+}
+
+const Map<String, String> _languageNames = <String, String>{
+  'zh': '中文',
+  'chi': '中文',
+  'zho': '中文',
+  'zh-cn': '简体中文',
+  'zh-hans': '简体中文',
+  'zh-sg': '简体中文',
+  'zh-tw': '繁体中文',
+  'zh-hk': '繁体中文',
+  'zh-hant': '繁体中文',
+  'en': '英语',
+  'eng': '英语',
+  'ja': '日语',
+  'jpn': '日语',
+  'ko': '韩语',
+  'kor': '韩语',
+  'fr': '法语',
+  'fre': '法语',
+  'fra': '法语',
+  'de': '德语',
+  'ger': '德语',
+  'deu': '德语',
+  'es': '西班牙语',
+  'spa': '西班牙语',
+  'ru': '俄语',
+  'rus': '俄语',
+};
+
+String? _localizedLanguage(String? language) {
+  final String? value = language?.trim();
+  if (value == null || value.isEmpty) return null;
+  return _languageNames[value.toLowerCase()] ?? value;
 }
