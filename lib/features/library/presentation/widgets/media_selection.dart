@@ -55,6 +55,21 @@ mixin MediaSelectionState<T extends ConsumerStatefulWidget>
     playSingleVideo(context, item);
   }
 
+  /// 按当前页面的完整列表播放，保留排序顺序并定位到点击项。
+  ///
+  /// 文件夹和「全部视频」使用该入口，播放器才具备上一集 / 下一集。
+  void handleQueueTap(MediaItem item, List<MediaItem> queue) {
+    if (selectionMode) {
+      toggleSelection(item);
+      return;
+    }
+    if (queue.isEmpty) return;
+    final int index = queue.indexWhere(
+      (MediaItem value) => value.id == item.id,
+    );
+    openPlayer(context, items: queue, index: index < 0 ? 0 : index);
+  }
+
   void handleLongPress(MediaItem item) {
     if (!selectionMode) {
       setState(() => selectedIds.add(item.id));

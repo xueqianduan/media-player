@@ -99,7 +99,7 @@ class _FolderPageState extends ConsumerState<FolderPage>
                       progress: state.progress,
                       selectedIds: selectedIds,
                       selectionMode: selectionMode,
-                      onTap: handleTap,
+                      onTap: (MediaItem item) => handleQueueTap(item, items),
                       onLongPress: handleLongPress,
                       onMore: (MediaItem item) =>
                           showVideoActionSheet(context, ref, item),
